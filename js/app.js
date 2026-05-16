@@ -23,6 +23,23 @@ const App = {
   init() {
     this.router();
     window.addEventListener('hashchange', () => this.router());
+    // 键盘快捷键
+    document.addEventListener('keydown', (e) => {
+      const onStudy = location.hash === '#study';
+      const inInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName);
+      if (inInput) return;
+      if (!onStudy) return;
+      if (e.key === ' ' || e.key === 'Spacebar') {
+        e.preventDefault();
+        this.studyReveal();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        this.nextWord();
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        this.prevWord();
+      }
+    });
   },
 
   router() {
