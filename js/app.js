@@ -184,6 +184,8 @@ const App = {
     diagHtml += '</div>';
     document.getElementById('diagnosis-section').innerHTML = diagHtml;
 
+    console.log('诊断已渲染, hasData:', hasData);
+
     // 成就检测
     const newAchi = Store.checkAchievements(stats);
     if (newAchi.length > 0) {
