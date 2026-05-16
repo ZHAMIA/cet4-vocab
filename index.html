@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>四级单词 · CET-4 高频词库</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ===== 页面：学习面板 ===== -->
+  <div id="page-dashboard" class="page">
+    <h1 class="page-title">📊 学习面板</h1>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-number" id="stat-learned">0</div>
+        <div class="stat-label">已学单词</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" id="stat-mastered">0</div>
+        <div class="stat-label">已掌握</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" id="stat-streak">0 天</div>
+        <div class="stat-label">连续打卡</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" id="stat-today">0</div>
+        <div class="stat-label">今日学习</div>
+      </div>
+    </div>
+    <div id="source-selector"></div>
+    <div id="wordlist-dashboard"></div>
+    <div id="calendar-container"></div>
+    <div class="card">
+      <h3 style="margin-bottom:12px;font-size:16px;">📋 今日任务</h3>
+      <div id="task-list"></div>
+    </div>
+  </div>
+
+  <!-- ===== 页面：单词学习 ===== -->
+  <div id="page-study" class="page hidden">
+    <h1 class="page-title">📖 单词学习</h1>
+    <div id="study-content">
+      <div class="empty-state">加载中...</div>
+    </div>
+  </div>
+
+  <!-- ===== 页面：闪卡测验 ===== -->
+  <div id="page-quiz" class="page hidden">
+    <h1 class="page-title">🎯 闪卡测验</h1>
+    <div id="quiz-content">
+      <div class="empty-state">加载中...</div>
+    </div>
+  </div>
+
+  <!-- ===== 页面：词库 ===== -->
+  <div id="page-words" class="page hidden">
+    <h1 class="page-title">📚 词库</h1>
+    <div id="word-list-content">
+      <div class="empty-state">加载中...</div>
+    </div>
+  </div>
+
+  <!-- ===== 页面：单词本管理 ===== -->
+  <div id="page-lists" class="page hidden">
+    <div id="lists-content"></div>
+  </div>
+
+  <!-- ===== 页面：导入单词 ===== -->
+  <div id="page-import" class="page hidden">
+    <h1 class="page-title">📥 导入单词</h1>
+    <div id="import-content"></div>
+  </div>
+
+
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-page="dashboard" onclick="location.hash='#dashboard'">
+      <span class="nav-icon">📊</span>
+      <span>面板</span>
+    </button>
+    <button class="nav-item" data-page="study" onclick="location.hash='#study'">
+      <span class="nav-icon">📖</span>
+      <span>学习</span>
+    </button>
+    <button class="nav-item" data-page="quiz" onclick="location.hash='#quiz'">
+      <span class="nav-icon">🎯</span>
+      <span>测验</span>
+    </button>
+    <button class="nav-item" data-page="words" onclick="location.hash='#words'">
+      <span class="nav-icon">📚</span>
+      <span>词库</span>
+    </button>
+    <button class="nav-item" data-page="lists" onclick="location.hash='#lists'">
+      <span class="nav-icon">📁</span>
+      <span>单词本</span>
+    </button>
+  </nav>
+
+  <!-- ===== 脚本 ===== -->
+  <script src="js/data.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/sm2.js"></script>
+  <script src="js/calendar.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
