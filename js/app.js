@@ -153,10 +153,12 @@ const App = {
 
     // 学习诊断
     const analysis = Store.getWeaknessAnalysis();
+    let hasData = false;
     let diagHtml = '<div style="margin-top:20px"><div class="page-title" style="font-size:18px;margin-bottom:12px">📊 学习诊断</div>';
     const sourceNames = { core: '📖 核心高频', listening: '🎧 听力场景', tricky: '🎯 熟词生义', imported: '📥 导入词', other: '其他' };
     Object.entries(analysis).forEach(([key, val]) => {
       if (val.total === 0) return;
+      hasData = true;
       const rate = Math.round(val.correct / val.total * 100);
       const color = rate >= 80 ? 'var(--accent)' : rate >= 60 ? 'var(--warn)' : 'var(--danger)';
       diagHtml += '<div class="diag-row"><div class="diag-label">' + (sourceNames[key] || key) + '</div>';
@@ -164,9 +166,23 @@ const App = {
       diagHtml += '<div class="diag-rate" style="color:' + color + '">' + rate + '%</div>';
       diagHtml += '<div class="diag-count">' + val.correct + '/' + val.total + '</div></div>';
     });
-    if (diagHtml.indexOf('diag-row') > 0) {
-      document.getElementById('diagnosis-section').innerHTML = diagHtml + '</div>';
+    // 没用测验数据的场景，按学习记录生成简单诊断
+    if (!hasData && stats.totalLearned > 0) {
+      const mastered = stats.totalMastered;
+      const rate = stats.totalLearned > 0 ? Math.round(mastered / stats.totalLearned * 100) : 0;
+      const color = rate >= 50 ? 'var(--accent)' : rate >= 30 ? 'var(--warn)' : 'var(--danger)';
+      diagHtml += '<div class="diag-row"><div class="diag-label">📖 总体</div>';
+      diagHtml += '<div class="diag-bar-bg"><div class="diag-bar" style="width:' + rate + '%;background:' + color + '"></div></div>';
+      diagHtml += '<div class="diag-rate" style="color:' + color + '">' + rate + '%</div>';
+      diagHtml += '<div class="diag-count">' + mastered + '/' + stats.totalLearned + '</div></div>';
+      diagHtml += '<div style="font-size:12px;color:var(--text2);margin-top:4px">💡 多做测验获取更详细的分类诊断</div>';
+      hasData = true;
     }
+    if (!hasData) {
+      diagHtml += '<div style="padding:20px 0;text-align:center;color:var(--text2);font-size:14px">📊 去做几道题，这里会显示你的弱点分析</div>';
+    }
+    diagHtml += '</div>';
+    document.getElementById('diagnosis-section').innerHTML = diagHtml;
 
     // 成就检测
     const newAchi = Store.checkAchievements(stats);
