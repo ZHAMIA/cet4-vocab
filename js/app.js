@@ -150,6 +150,49 @@ const App = {
     }
     if (!html) html = '<div class="task-item done">✅ 今日任务已完成</div>';
     document.getElementById('task-list').innerHTML = html;
+
+    // 学习诊断
+    const analysis = Store.getWeaknessAnalysis();
+    let diagHtml = '<div style="margin-top:20px"><div class="page-title" style="font-size:18px;margin-bottom:12px">📊 学习诊断</div>';
+    const sourceNames = { core: '📖 核心高频', listening: '🎧 听力场景', tricky: '🎯 熟词生义', imported: '📥 导入词', other: '其他' };
+    Object.entries(analysis).forEach(([key, val]) => {
+      if (val.total === 0) return;
+      const rate = Math.round(val.correct / val.total * 100);
+      const color = rate >= 80 ? 'var(--accent)' : rate >= 60 ? 'var(--warn)' : 'var(--danger)';
+      diagHtml += '<div class="diag-row"><div class="diag-label">' + (sourceNames[key] || key) + '</div>';
+      diagHtml += '<div class="diag-bar-bg"><div class="diag-bar" style="width:' + rate + '%;background:' + color + '"></div></div>';
+      diagHtml += '<div class="diag-rate" style="color:' + color + '">' + rate + '%</div>';
+      diagHtml += '<div class="diag-count">' + val.correct + '/' + val.total + '</div></div>';
+    });
+    if (diagHtml.indexOf('diag-row') > 0) {
+      document.getElementById('diagnosis-section').innerHTML = diagHtml + '</div>';
+    }
+
+    // 成就检测
+    const newAchi = Store.checkAchievements(stats);
+    if (newAchi.length > 0) {
+      let aHtml = '<div class="achi-popup" id="achi-popup">';
+      newAchi.forEach(a => {
+        aHtml += '<div class="achi-card"><div class="achi-icon">' + a.icon + '</div><div class="achi-name">' + a.name + '</div><div class="achi-desc">' + a.desc + '</div></div>';
+      });
+      aHtml += '</div>';
+      document.getElementById('achievement-section').innerHTML = aHtml;
+      setTimeout(() => { const el = document.getElementById('achi-popup'); if (el) el.remove(); }, 5000);
+    }
+
+    // 已获得成就列表
+    const earned = Store.getEarnedAchievements();
+    const allAchi = Store.getAllAchievements();
+    let earnedHtml = '<div style="margin-top:16px"><div class="page-title" style="font-size:18px;margin-bottom:12px">🏆 成就</div><div class="achi-grid">';
+    allAchi.forEach(a => {
+      const got = earned.includes(a.id);
+      earnedHtml += '<div class="achi-item ' + (got ? '' : 'locked') + '">';
+      earnedHtml += '<div class="achi-item-icon">' + (got ? a.icon : '🔒') + '</div>';
+      earnedHtml += '<div class="achi-item-name">' + a.name + '</div>';
+      earnedHtml += '<div class="achi-item-desc">' + a.desc + '</div></div>';
+    });
+    earnedHtml += '</div></div>';
+    document.getElementById('achievements-list').innerHTML = earnedHtml;
   },
 
   switchSource(source) {
@@ -461,6 +504,7 @@ const App = {
     Store.logDailyActivity(today, 'review');
     if (isCorrect) Store.logDailyActivity(today, 'correct');
     Store.logDailyActivity(today, 'total');
+    Store.logQuiz(wordId, isCorrect, 'listening');
   },
 
   continueListening() {
@@ -478,6 +522,7 @@ const App = {
     Store.logDailyActivity(today, 'review');
     if (quality >= 3) Store.logDailyActivity(today, 'correct');
     Store.logDailyActivity(today, 'total');
+    Store.logQuiz(word.id, quality >= 3, 'normal');
     document.querySelectorAll('.btn-quiz').forEach(b => b.disabled = true);
     document.querySelectorAll('.btn-quiz').forEach((b, i) => { if ([1, 3, 5][i] === quality) b.classList.add('selected'); });
     setTimeout(() => { this.quizIndex++; this.renderQuiz(); }, 800);

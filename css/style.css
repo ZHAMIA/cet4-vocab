@@ -698,6 +698,52 @@ body {
 .list-option:last-child { border-bottom: none; }
 
 /* ===== 空状态 ===== */
+
+/* ===== 学习诊断 ===== */
+.diag-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.diag-label { width: 90px; flex-shrink: 0; font-weight: 500; }
+.diag-bar-bg { flex: 1; height: 10px; background: var(--surface2); border-radius: 5px; overflow: hidden; }
+.diag-bar { height: 100%; border-radius: 5px; transition: width 0.5s; }
+.diag-rate { width: 36px; text-align: right; font-weight: 600; }
+.diag-count { width: 50px; text-align: right; color: var(--text2); font-size: 12px; }
+
+/* ===== 成就 ===== */
+.achi-popup {
+  background: var(--surface);
+  border-radius: 20px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+  padding: 16px;
+  margin-top: 12px;
+  animation: slideIn 0.3s ease;
+}
+@keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+.achi-card { text-align: center; padding: 8px; }
+.achi-icon { font-size: 40px; }
+.achi-name { font-size: 18px; font-weight: 700; margin-top: 4px; }
+.achi-desc { font-size: 13px; color: var(--text2); margin-top: 2px; }
+.achi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+.achi-item {
+  background: var(--surface);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 14px 10px;
+  text-align: center;
+}
+.achi-item.locked { opacity: 0.4; }
+.achi-item-icon { font-size: 28px; }
+.achi-item-name { font-size: 13px; font-weight: 600; margin-top: 4px; }
+.achi-item-desc { font-size: 11px; color: var(--text2); margin-top: 2px; }
+@media (max-width: 480px) { .achi-grid { gap: 6px; } .achi-item { padding: 10px 6px; } .diag-label { width: 70px; } }
 .empty-state {
   text-align: center;
   padding: 32px 16px;

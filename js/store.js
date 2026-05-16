@@ -209,6 +209,113 @@ const Store = {
   },
 
   // Override getAllWords to include imported words
+  // ===== 测验记录 =====
+  _quizKey: 'cet4_quiz_history',
+
+  logQuiz(wordId, correct, source) {
+    const history = this.getQuizHistory();
+    history.push({ wordId, correct, source, time: Date.now() });
+    if (history.length > 2000) history.splice(0, history.length - 2000);
+    localStorage.setItem(this._quizKey, JSON.stringify(history));
+  },
+
+  getQuizHistory() {
+    try { return JSON.parse(localStorage.getItem(this._quizKey)) || []; } catch { return []; }
+  },
+
+  getWeaknessAnalysis() {
+    const history = this.getQuizHistory();
+    const all = this.getAllWords();
+    const bySource = { core: { correct: 0, total: 0 }, listening: { correct: 0, total: 0 }, tricky: { correct: 0, total: 0 }, imported: { correct: 0, total: 0 }, other: { correct: 0, total: 0 } };
+    history.forEach(h => {
+      const w = all.find(x => x.id === h.wordId);
+      let source = 'other';
+      if (w) {
+        if (w.id <= 100) source = 'core';
+        else if (w.id >= 200 && w.id < 300) source = 'listening';
+        else if (w.id >= 300 && w.id < 10000) source = 'tricky';
+        else source = 'imported';
+      }
+      bySource[source].total++;
+      if (h.correct) bySource[source].correct++;
+    });
+    return bySource;
+  },
+
+  getDailyStats(days = 30) {
+    const data = this.getStreakData();
+    const result = [];
+    const today = new Date();
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().split('T')[0];
+      const day = data[key] || { learned: 0, reviewed: 0, correct: 0, total: 0 };
+      result.push({ date: key, learned: day.learned || 0, reviewed: day.reviewed || 0, correct: day.correct || 0, total: day.total || 0 });
+    }
+    return result;
+  },
+
+  // ===== 成就系统 =====
+  _achiKey: 'cet4_achievements',
+
+  getEarnedAchievements() {
+    try { return JSON.parse(localStorage.getItem(this._achiKey)) || []; } catch { return []; }
+  },
+
+  saveEarnedAchievements(ids) {
+    localStorage.setItem(this._achiKey, JSON.stringify(ids));
+  },
+
+  getAllAchievements() {
+    return [
+      { id: 'first_word', name: '新手入门', icon: '🌱', desc: '学习完成第一个单词' },
+      { id: 'hundred_words', name: '百词斩', icon: '📚', desc: '累计学习 100 个单词' },
+      { id: 'double_hundred', name: '词海遨游', icon: '🌊', desc: '累计学习 200 个单词' },
+      { id: 'streak_7', name: '周冠军', icon: '🏅', desc: '连续打卡 7 天' },
+      { id: 'streak_30', name: '满月勋章', icon: '🌙', desc: '连续打卡 30 天' },
+      { id: 'master_10', name: '初露锋芒', icon: '⭐', desc: '掌握 10 个单词（Lv.4+）' },
+      { id: 'master_50', name: '单词大师', icon: '💎', desc: '掌握 50 个单词（Lv.4+）' },
+      { id: 'listening_master', name: '听力达人', icon: '🎧', desc: '听力词正确率≥80%（至少测 10 题）' },
+      { id: 'quiz_50', name: '刷题狂魔', icon: '📝', desc: '累计答题 50 题' },
+      { id: 'quiz_200', name: '战神', icon: '⚔️', desc: '累计答题 200 题' },
+      { id: 'import_10', name: '搬运工', icon: '📥', desc: '导入 10 个自定义单词' },
+      { id: 'all_core', name: '核心全通', icon: '👑', desc: '核心高频词全部学过一遍' },
+    ];
+  },
+
+  checkAchievements(stats) {
+    const earned = this.getEarnedAchievements();
+    const newOnes = [];
+    const all = this.getAllAchievements();
+    all.forEach(a => {
+      if (earned.includes(a.id)) return;
+      let earn = false;
+      switch (a.id) {
+        case 'first_word': earn = stats.totalLearned >= 1; break;
+        case 'hundred_words': earn = stats.totalLearned >= 100; break;
+        case 'double_hundred': earn = stats.totalLearned >= 200; break;
+        case 'streak_7': earn = stats.streak >= 7; break;
+        case 'streak_30': earn = stats.streak >= 30; break;
+        case 'master_10': earn = stats.totalMastered >= 10; break;
+        case 'master_50': earn = stats.totalMastered >= 50; break;
+        case 'listening_master': {
+          const analysis = this.getWeaknessAnalysis();
+          const l = analysis.listening;
+          if (l.total >= 10 && l.correct / l.total >= 0.8) earn = true;
+          break;
+        }
+        case 'quiz_50': earn = this.getQuizHistory().length >= 50; break;
+        case 'quiz_200': earn = this.getQuizHistory().length >= 200; break;
+        case 'import_10': earn = this.getImportedWords().length >= 10; break;
+        case 'all_core': earn = Object.keys(this.getLearnData()).filter(id => parseInt(id) <= 100).length >= 100; break;
+      }
+      if (earn) { earned.push(a.id); newOnes.push(a); }
+    });
+    if (newOnes.length > 0) this.saveEarnedAchievements(earned);
+    return newOnes;
+  },
+
   getAllWords() {
     return [...WordDB, ...ListeningWords, ...TrickyWords, ...this.getImportedWords()];
   },
