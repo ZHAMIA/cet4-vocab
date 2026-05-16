@@ -38,6 +38,14 @@ const App = {
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault();
         this.prevWord();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        const w = this.getWordDB()[this.currentWordIndex];
+        if (w) this.speak(w.word);
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const w = this.getWordDB()[this.currentWordIndex];
+        if (w && w.example) this.speak(w.example);
       }
     });
   },
