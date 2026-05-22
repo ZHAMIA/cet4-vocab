@@ -152,6 +152,33 @@ const App = {
         }
       });
     }
+
+    // v4.0: 监听 Service Worker 消息（每日提醒）
+    if (navigator.serviceWorker) {
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'GET_REMINDER_SETTING') {
+          const setting = Store.getReminderSetting();
+          event.source.postMessage({ type: 'REMINDER_SETTING', setting });
+        }
+        if (event.data && event.data.type === 'GET_STUDY_STATS') {
+          const learnData = Store.getLearnData();
+          const dueWords = SM2.getDueWords(learnData);
+          const streakData = Store.getStreakData();
+          const today = new Date().toISOString().split('T')[0];
+          const todayData = streakData[today] || {};
+          event.source.postMessage({
+            type: 'STUDY_STATS',
+            stats: {
+              due: dueWords.length,
+              todayLearned: (todayData.learned || 0) + (todayData.reviewed || 0)
+            }
+          });
+        }
+        if (event.data && event.data.type === 'NAVIGATE') {
+          location.hash = event.data.hash || '#study';
+        }
+      });
+    }
   },
 
   router() {
@@ -196,6 +223,10 @@ const App = {
       case '#import':
         document.getElementById('page-import')?.classList.remove('hidden');
         this.renderImport();
+        break;
+      case '#settings':
+        document.getElementById('page-settings')?.classList.remove('hidden');
+        this.renderSettings();
         break;
       default:
         location.hash = '#dashboard';
@@ -412,6 +443,14 @@ const App = {
     diagHtml += '</div>';
     document.getElementById('diagnosis-section').innerHTML = diagHtml;
 
+    // ===== v4.0: 遗忘曲线图 =====
+    this.renderForgettingCurve();
+
+    // ===== v4.0: 学习时间统计 =====
+    this.renderStudyTimeStats();
+
+    // ===== v4.0: 学习时间统计 =====
+    this.renderStudyTimeStats();
     // 成就检测
     const newAchi = Store.checkAchievements(stats);
     if (newAchi.length > 0) {
@@ -648,6 +687,220 @@ const App = {
         <span class="donut-legend-count">${c.count}词 (${Math.round(c.count/totalVal*100)}%)</span>
       </div>
     `).join('');
+  },
+
+  // ============ 📈 遗忘曲线图（v4.0） ============
+
+  /** 绘制遗忘曲线散点图 */
+  renderForgettingCurve() {
+    const container = document.getElementById('diagnosis-section');
+    if (!container) return;
+
+    const learnData = Store.getLearnData();
+    const entries = Object.entries(learnData).filter(([_, s]) => s.reps > 0 && s.stability > 0);
+
+    let html = '<div class="card" style="margin-top:16px"><div class="card-content">';
+    html += '<div class="section-label" style="margin-bottom:12px">🧠 遗忘曲线预测</div>';
+
+    if (entries.length < 3) {
+      html += '<div style="padding:12px 0;text-align:center;color:var(--text2);font-size:14px">📊 再学几个单词，这里会展示每个词的 retention 预测值</div>';
+      html += '</div></div>';
+      // Find the last card in diagnosis-section and append after it
+      // Actually let's just append to the container directly
+      const existing = container.querySelector('.forgetting-curve-card');
+      if (existing) existing.remove();
+      const wrapper = document.createElement('div');
+      wrapper.className = 'forgetting-curve-card';
+      wrapper.innerHTML = html;
+      container.appendChild(wrapper);
+      return;
+    }
+
+    const now = Date.now();
+    // 为每个已学词计算 retention
+    const points = entries.map(([id, s]) => {
+      const elapsedDays = (now - s.lastReview) / (24 * 60 * 60 * 1000);
+      const retention = SM2.recall(s.stability, elapsedDays);
+      return { id, elapsedDays, retention, stability: s.stability, level: s.level };
+    });
+
+    html += `<canvas id="forgetting-curve-canvas" class="trend-chart" style="height:200px"></canvas>`;
+    html += '</div></div>';
+
+    const existing = container.querySelector('.forgetting-curve-card');
+    if (existing) existing.remove();
+    const wrapper = document.createElement('div');
+    wrapper.className = 'forgetting-curve-card';
+    wrapper.innerHTML = html;
+    container.appendChild(wrapper);
+
+    // 绘制 Canvas（延迟确保 DOM 渲染完成）
+    setTimeout(() => this._drawForgettingCurve(points), 50);
+  },
+
+  /** 绘制遗忘曲线 Canvas */
+  _drawForgettingCurve(points) {
+    const canvas = document.getElementById('forgetting-curve-canvas');
+    if (!canvas || points.length === 0) return;
+
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = 200 * dpr;
+    ctx.scale(dpr, dpr);
+    const w = rect.width;
+    const h = 200;
+
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    ctx.clearRect(0, 0, w, h);
+
+    const padding = { top: 20, bottom: 30, left: 36, right: 16 };
+    const chartW = w - padding.left - padding.right;
+    const chartH = h - padding.top - padding.bottom;
+
+    // 计算范围
+    const maxDays = Math.max(7, ...points.map(p => Math.ceil(p.elapsedDays)));
+
+    // 绘制理论遗忘曲线（R = e^(-t/s) 用平均 stability）
+    const avgStability = points.reduce((s, p) => s + p.stability, 0) / points.length;
+
+    // 网格
+    ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    for (let i = 0; i <= 4; i++) {
+      const y = padding.top + (chartH / 4) * i;
+      ctx.beginPath();
+      ctx.moveTo(padding.left, y);
+      ctx.lineTo(w - padding.right, y);
+      ctx.stroke();
+
+      // Y 轴标签
+      const val = 1 - i / 4;
+      ctx.fillStyle = isDark ? '#8896ae' : '#6c7a91';
+      ctx.font = '10px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText((val * 100).toFixed(0) + '%', padding.left - 4, y + 3);
+    }
+    ctx.setLineDash([]);
+
+    // 绘制理论曲线
+    ctx.beginPath();
+    for (let x = 0; x <= chartW; x++) {
+      const day = (x / chartW) * maxDays;
+      const r = SM2.recall(avgStability, day);
+      const y = padding.top + chartH - r * chartH;
+      if (x === 0) ctx.moveTo(padding.left + x, y);
+      else ctx.lineTo(padding.left + x, y);
+    }
+    ctx.strokeStyle = isDark ? 'rgba(96,165,250,0.3)' : 'rgba(59,130,246,0.25)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 绘制散点（每个单词一个点）
+    points.forEach(p => {
+      const x = padding.left + (p.elapsedDays / maxDays) * chartW;
+      const y = padding.top + chartH - p.retention * chartH;
+
+      // 点的颜色根据掌握程度
+      let color;
+      if (p.level >= 4) color = isDark ? '#4ade80' : '#34c759';
+      else if (p.level >= 2) color = isDark ? '#fbbf24' : '#ff9500';
+      else color = isDark ? '#f87171' : '#ff3b30';
+
+      ctx.beginPath();
+      ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.strokeStyle = isDark ? '#0f1729' : '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    });
+
+    // X 轴标签
+    ctx.fillStyle = isDark ? '#8896ae' : '#6c7a91';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center';
+    for (let i = 0; i <= 5; i++) {
+      const day = Math.round((i / 5) * maxDays);
+      const x = padding.left + (i / 5) * chartW;
+      ctx.fillText(day + '天', x, h - 5);
+    }
+
+    // 图例
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'left';
+    const legendY = padding.top + 12;
+    ctx.fillStyle = isDark ? 'rgba(96,165,250,0.3)' : 'rgba(59,130,246,0.25)';
+    ctx.fillRect(w - 140, legendY - 6, 16, 3);
+    ctx.fillStyle = isDark ? '#8896ae' : '#6c7a91';
+    ctx.fillText('理论遗忘曲线', w - 118, legendY + 2);
+    ctx.fillStyle = isDark ? '#4ade80' : '#34c759';
+    ctx.beginPath();
+    ctx.arc(w - 140, legendY + 16, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = isDark ? '#8896ae' : '#6c7a91';
+    ctx.fillText('各词 retention', w - 118, legendY + 20);
+  },
+
+  // ============ ⏱ 学习时间统计（v4.0） ============
+
+  /** 渲染学习时间统计 */
+  renderStudyTimeStats() {
+    const container = document.getElementById('dashboard');
+    if (!container) return;
+
+    const streakData = Store.getStreakData();
+    const dailyStats = Store.getDailyStats(30);
+
+    // 过去 30 天
+    const activeDays = dailyStats.filter(d => d.learned > 0 || d.reviewed > 0);
+    if (activeDays.length === 0) return;
+
+    // 最活跃的一天
+    let maxDay = activeDays[0];
+    activeDays.forEach(d => {
+      if (d.learned + d.reviewed > maxDay.learned + maxDay.reviewed) maxDay = d;
+    });
+
+    // 平均每天学习词数
+    const avgWords = activeDays.reduce((s, d) => s + d.learned + d.reviewed, 0) / activeDays.length;
+
+    // 查找某个现有卡片后面插入
+    let targetEl = document.getElementById('study-time-stats');
+    if (!targetEl) {
+      targetEl = document.createElement('div');
+      targetEl.id = 'study-time-stats';
+      // 插入到诊断区后面
+      const diagSection = document.getElementById('diagnosis-section');
+      if (diagSection) {
+        diagSection.parentNode.insertBefore(targetEl, diagSection.nextSibling);
+      } else {
+        document.getElementById('task-list')?.parentNode?.appendChild(targetEl);
+      }
+    }
+
+    targetEl.innerHTML = `
+      <div class="card"><div class="card-content">
+        <div class="section-label" style="margin-bottom:12px">⏱ 学习时间统计（近 30 天）</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;text-align:center">
+          <div>
+            <div style="font-size:24px;font-weight:700;color:var(--primary)">${activeDays.length}</div>
+            <div style="font-size:12px;color:var(--text2)">学习天数</div>
+          </div>
+          <div>
+            <div style="font-size:24px;font-weight:700;color:var(--primary)">${avgWords.toFixed(1)}</div>
+            <div style="font-size:12px;color:var(--text2)">日均词数</div>
+          </div>
+          <div>
+            <div style="font-size:24px;font-weight:700;color:var(--accent)">${maxDay.learned + maxDay.reviewed}</div>
+            <div style="font-size:12px;color:var(--text2)">最活跃 (${maxDay.date.slice(5)})</div>
+          </div>
+        </div>
+      </div></div>`;
   },
 
   switchSource(source) {
@@ -935,6 +1188,16 @@ const App = {
           <div style="font-size:32px">✍️</div>
           <div class="mode-name">拼写模式</div>
           <div class="mode-desc">看中文释义，输入英文单词（练拼写）</div>
+        </div>
+        <div class="mode-card" onclick="App.startMultipleChoiceQuiz()">
+          <div style="font-size:32px">✅</div>
+          <div class="mode-name">选择题</div>
+          <div class="mode-desc">四选一，选完立即反馈，计入学习记录</div>
+        </div>
+        <div class="mode-card" onclick="App.startMockExam()">
+          <div style="font-size:32px">🎯</div>
+          <div class="mode-name">真题模拟</div>
+          <div class="mode-desc">30 题混合题型 · 15 分钟限时</div>
         </div>
       </div>`;
   },
@@ -1256,6 +1519,456 @@ const App = {
     setTimeout(() => { this.quizIndex++; this.renderQuiz(); }, 800);
   },
 
+  // ============ ✍️ 选择题模式（v4.0） ============
+
+  /** 开始选择题测验 */
+  startMultipleChoiceQuiz() {
+    this.quizMode = 'choice';
+    const words = this.getWordDB().length > 0 ? this.getWordDB() : [...WordDB];
+    this.quizWords = words.sort(() => Math.random() - 0.5).slice(0, Math.min(20, words.length));
+    this.quizIndex = 0;
+    this.mcCorrectCount = 0;
+    this.mcTotalCount = this.quizWords.length;
+    this.renderMultipleChoice();
+  },
+
+  /** 渲染选择题 */
+  renderMultipleChoice() {
+    if (this.quizIndex >= this.quizWords.length) {
+      // 完成
+      const pct = this.mcTotalCount > 0 ? Math.round(this.mcCorrectCount / this.mcTotalCount * 100) : 0;
+      document.getElementById('quiz-content').innerHTML = `
+        <div class="quiz-complete">
+          <div class="complete-icon">🏆</div>
+          <h2>选择题完成！</h2>
+          <p style="font-size:18px;font-weight:600;color:var(--primary)">${this.mcCorrectCount} / ${this.mcTotalCount} 正确 (${pct}%)</p>
+          <button class="btn btn-primary" onclick="App.showQuizModePicker()">选择模式</button>
+          <button class="btn btn-outline" onclick="location.hash='#dashboard'">返回</button>
+        </div>`;
+      return;
+    }
+
+    const word = this.quizWords[this.quizIndex];
+    if (!word) { this.quizIndex++; this.renderMultipleChoice(); return; }
+
+    // 决定题目方向：展示中文释义选英文，或展示英文选中释义
+    const isEn2Cn = Math.random() > 0.5;
+    const prompt = isEn2Cn ? word.word : word.def;
+    const correctAnswer = isEn2Cn ? word.def : word.word;
+
+    // 生成选项：正确 + 3 个干扰项
+    const options = this._generateChoiceOptions(word, isEn2Cn);
+
+    document.getElementById('quiz-content').innerHTML = `
+      <div class="quiz-progress">
+        <span>第 ${this.quizIndex + 1} / ${this.quizWords.length} 题 · ✍️ 选择题</span>
+        <span class="badge" style="background:${this.mcCorrectCount > 0 ? 'rgba(52,199,89,0.1);color:var(--accent)' : 'var(--surface2);color:var(--text2)'}">✅ ${this.mcCorrectCount}</span>
+      </div>
+      <div class="card quiz-card">
+        <div class="quiz-prompt" style="padding:20px 16px">
+          <div style="font-size:14px;color:var(--text2);margin-bottom:8px">${isEn2Cn ? '选择正确的中文释义' : '选择正确的英文单词'}</div>
+          <h2 style="font-size:24px;font-weight:700">${prompt}</h2>
+          ${isEn2Cn ? `<div class="pronounce-tag" style="display:inline-flex;margin-top:6px;justify-content:center">
+            <span class="speaker-btn" onclick="event.stopPropagation();App.speak('${word.word.replace(/'/g, "\'")}')">🔊 听发音</span>
+          </div>` : ''}
+        </div>
+        <div class="choice-options" id="choice-options">
+          ${options.map((opt, i) => `
+            <button class="choice-option" data-idx="${i}" onclick="App.submitChoice(${i}, ${isEn2Cn ? `'${correctAnswer.replace(/'/g, "\\'")}'` : `\`${correctAnswer.replace(/\\/g,'\\\\').replace(/`/g,'\\`')}\``}, '${opt.replace(/'/g, "\\'")}', ${isEn2Cn})">
+              <span class="choice-letter">${String.fromCharCode(65 + i)}</span>
+              <span class="choice-text">${opt}</span>
+            </button>
+          `).join('')}
+        </div>
+        <div id="choice-feedback" class="choice-feedback hidden"></div>
+      </div>
+      <div class="quiz-buttons" id="choice-next" style="display:none">
+        <button class="btn btn-primary" onclick="App.nextChoice()">下一题 →</button>
+      </div>`;
+  },
+
+  /** 生成选择题选项（1 正确 + 3 干扰） */
+  _generateChoiceOptions(word, isEn2Cn) {
+    const correctAnswer = isEn2Cn ? word.def : word.word;
+    // 从词库获取干扰项
+    const pool = this.quizWords
+      .filter(w => w.id !== word.id)
+      .map(w => isEn2Cn ? w.def : w.word)
+      .filter(Boolean);
+    // 去重
+    const unique = [...new Set(pool)];
+    // 打乱后取 3 个
+    const distractors = unique.sort(() => Math.random() - 0.5).slice(0, 3);
+    const options = [correctAnswer, ...distractors];
+    // 打乱顺序
+    return options.sort(() => Math.random() - 0.5);
+  },
+
+  /** 提交选择题答案 */
+  submitChoice(idx, correctAnswer, selectedText, isEn2Cn) {
+    const word = this.quizWords[this.quizIndex];
+    if (!word || this._choiceSubmitted) return;
+    this._choiceSubmitted = true;
+
+    const isCorrect = selectedText === correctAnswer;
+    const buttons = document.querySelectorAll('.choice-option');
+    buttons.forEach((btn, i) => {
+      btn.disabled = true;
+      const text = btn.querySelector('.choice-text')?.textContent || '';
+      if (text === correctAnswer) btn.classList.add('correct');
+      if (i === idx && !isCorrect) btn.classList.add('wrong');
+    });
+
+    if (isCorrect) this.mcCorrectCount++;
+
+    // SM-2 记录
+    const quality = isCorrect ? 5 : 1;
+    const learnData = Store.getLearnData();
+    Store.saveWordState(word.id, SM2.calculate(learnData[word.id], quality));
+    const today = new Date().toISOString().split('T')[0];
+    Store.logDailyActivity(today, 'review');
+    if (isCorrect) Store.logDailyActivity(today, 'correct');
+    Store.logDailyActivity(today, 'total');
+    Store.logQuiz(word.id, isCorrect, 'choice');
+
+    // 反馈
+    const feedback = document.getElementById('choice-feedback');
+    if (feedback) {
+      feedback.className = 'choice-feedback ' + (isCorrect ? 'correct' : 'wrong');
+      feedback.classList.remove('hidden');
+      feedback.innerHTML = isCorrect
+        ? '✅ 正确！'
+        : `❌ 正确答案是：<strong>${correctAnswer}</strong>`;
+    }
+
+    const next = document.getElementById('choice-next');
+    if (next) next.style.display = 'flex';
+  },
+
+  /** 选择题下一题 */
+  nextChoice() {
+    this._choiceSubmitted = false;
+    this.quizIndex++;
+    this.renderMultipleChoice();
+  },
+
+  // ============ 🎯 真题模拟模式（v4.0） ============
+
+  /** 开始真题模拟 */
+  startMockExam() {
+    this.quizMode = 'exam';
+    this.examAnswers = [];
+    this.examStarted = false;
+    this.examTimeLeft = 15 * 60; // 15 分钟，秒为单位
+    this.examTimer = null;
+
+    // 从词库随机抽 30 题
+    const words = this.getWordDB().length > 0 ? this.getWordDB() : [...WordDB];
+    const shuffled = words.sort(() => Math.random() - 0.5);
+    this.examWords = shuffled.slice(0, Math.min(30, shuffled.length));
+
+    // 分配题型：选词填空(5) + 英译中(10) + 中译英(10) + 阅读理解判断(5)
+    this.examQuestions = [];
+    let idx = 0;
+
+    // 选词填空 5 题
+    for (let i = 0; i < 5 && idx < this.examWords.length; i++, idx++) {
+      this.examQuestions.push({ type: 'fill', word: this.examWords[idx] });
+    }
+    // 英译中 10 题
+    for (let i = 0; i < 10 && idx < this.examWords.length; i++, idx++) {
+      this.examQuestions.push({ type: 'en2cn', word: this.examWords[idx] });
+    }
+    // 中译英 10 题
+    for (let i = 0; i < 10 && idx < this.examWords.length; i++, idx++) {
+      this.examQuestions.push({ type: 'cn2en', word: this.examWords[idx] });
+    }
+    // 阅读理解判断 5 题
+    for (let i = 0; i < 5 && idx < this.examWords.length; i++, idx++) {
+      this.examQuestions.push({ type: 'reading', word: this.examWords[idx] });
+    }
+
+    // 打乱题型顺序
+    this.examQuestions = this.examQuestions.sort(() => Math.random() - 0.5);
+
+    this.examCurrent = 0;
+    this.examScore = { correct: 0, total: this.examQuestions.length };
+
+    this.renderMockExam();
+  },
+
+  /** 渲染真题模拟 */
+  renderMockExam() {
+    if (this.examCurrent >= this.examQuestions.length) {
+      // 考试完成
+      this._finishExam();
+      return;
+    }
+
+    const q = this.examQuestions[this.examCurrent];
+    const word = q.word;
+    if (!word) { this.examCurrent++; this.renderMockExam(); return; }
+
+    // 启动计时器
+    if (!this.examStarted) {
+      this.examStarted = true;
+      this._startExamTimer();
+    }
+
+    const timeStr = this._formatExamTime(this.examTimeLeft);
+
+    let questionHtml = '';
+    switch (q.type) {
+      case 'fill':
+        // 选词填空：显示中文释义和首字母提示
+        questionHtml = `
+          <div class="exam-question-type">📝 选词填空 <span style="font-size:12px;color:var(--text2);font-weight:400">（填入正确的英文单词）</span></div>
+          <div class="exam-prompt">
+            <div style="font-size:16px;margin-bottom:8px">中文释义：<strong>${word.def}</strong></div>
+            <div style="font-size:14px;color:var(--text2)">词性：${word.pos || ''}</div>
+          </div>
+          <input type="text" id="exam-input" class="exam-input" placeholder="输入英文单词..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+        `;
+        break;
+      case 'en2cn':
+        // 英译中
+        questionHtml = `
+          <div class="exam-question-type">📖 英译中 <span style="font-size:12px;color:var(--text2);font-weight:400">（选择正确的中文释义）</span></div>
+          <div class="exam-prompt">
+            <h2 style="font-size:22px;font-weight:700">${word.word}</h2>
+            <div style="font-size:13px;color:var(--text2);margin-top:4px">${word.phonetic || ''}</div>
+          </div>
+          <div class="choice-options">
+            ${this._generateExamOptions(word, 'en2cn').map((opt, i) => `
+              <button class="choice-option" onclick="App.submitExamAnswer('en2cn', ${i}, '${opt.replace(/'/g, "\\'")}')">
+                <span class="choice-letter">${String.fromCharCode(65 + i)}</span>
+                <span class="choice-text">${opt}</span>
+              </button>
+            `).join('')}
+          </div>
+        `;
+        break;
+      case 'cn2en':
+        // 中译英
+        questionHtml = `
+          <div class="exam-question-type">✍️ 中译英 <span style="font-size:12px;color:var(--text2);font-weight:400">（选择正确的英文单词）</span></div>
+          <div class="exam-prompt">
+            <h2 style="font-size:20px;font-weight:600">${word.def}</h2>
+            <div style="font-size:13px;color:var(--text2);margin-top:4px">${word.pos || ''}</div>
+          </div>
+          <div class="choice-options">
+            ${this._generateExamOptions(word, 'cn2en').map((opt, i) => `
+              <button class="choice-option" onclick="App.submitExamAnswer('cn2en', ${i}, '${opt.replace(/'/g, "\\'")}')">
+                <span class="choice-letter">${String.fromCharCode(65 + i)}</span>
+                <span class="choice-text">${opt}</span>
+              </button>
+            `).join('')}
+          </div>
+        `;
+        break;
+      case 'reading':
+        // 阅读理解判断
+        const isMatch = Math.random() > 0.4;
+        const displayDef = isMatch ? word.def : (this._getRandomDef(word));
+        questionHtml = `
+          <div class="exam-question-type">📄 阅读理解判断</div>
+          <div class="exam-reading-box">
+            <div style="font-size:14px;font-weight:500;margin-bottom:8px">阅读以下句子：</div>
+            <div class="exam-reading-text">${word.example || word.word + ' 是一个英语单词。'}</div>
+          </div>
+          <div class="exam-prompt" style="margin-top:12px">
+            <div style="font-size:14px;color:var(--text2);margin-bottom:8px">根据上下文，单词 <strong>${word.word}</strong> 的意思是：</div>
+            <div style="font-size:16px">${displayDef}</div>
+          </div>
+          <div class="choice-options exam-judge">
+            <button class="choice-option" onclick="App.submitExamAnswer('reading', ${isMatch ? 1 : 0}, 'true')">
+              <span class="choice-letter">A</span>
+              <span class="choice-text">✅ 释义正确</span>
+            </button>
+            <button class="choice-option" onclick="App.submitExamAnswer('reading', ${isMatch ? 0 : 1}, 'false')">
+              <span class="choice-letter">B</span>
+              <span class="choice-text">❌ 释义错误</span>
+            </button>
+          </div>
+        `;
+        this._examReadingMatch = isMatch;
+        break;
+    }
+
+    document.getElementById('quiz-content').innerHTML = `
+      <div class="exam-header">
+        <span class="exam-badge">🎯 真题模拟</span>
+        <span class="exam-timer" id="exam-timer">⏱ ${timeStr}</span>
+      </div>
+      <div class="quiz-progress">
+        <span>第 ${this.examCurrent + 1} / ${this.examQuestions.length} 题</span>
+        <span>✅ ${this.examScore.correct} / ${this.examCurrent}</span>
+      </div>
+      <div class="card quiz-card">
+        ${questionHtml}
+        <div id="exam-feedback" class="choice-feedback hidden"></div>
+      </div>
+      <div class="quiz-buttons" id="exam-next" style="display:none">
+        <button class="btn btn-primary" onclick="App.nextExamQuestion()">下一题 →</button>
+      </div>`;
+
+    // 自动聚焦输入框
+    if (q.type === 'fill') {
+      setTimeout(() => document.getElementById('exam-input')?.focus(), 300);
+    }
+  },
+
+  /** 生成考试选项（干扰项） */
+  _generateExamOptions(word, mode) {
+    const correctAnswer = mode === 'en2cn' ? word.def : word.word;
+    const pool = this.examWords
+      .filter(w => w.id !== word.id)
+      .map(w => mode === 'en2cn' ? w.def : w.word)
+      .filter(Boolean);
+    const unique = [...new Set(pool)];
+    const distractors = unique.sort(() => Math.random() - 0.5).slice(0, 3);
+    const options = [correctAnswer, ...distractors];
+    return options.sort(() => Math.random() - 0.5);
+  },
+
+  /** 获取随机错误释义（阅读判断题用） */
+  _getRandomDef(word) {
+    const pool = this.examWords.filter(w => w.id !== word.id && w.def);
+    if (pool.length === 0) return '这是一个英语单词的定义';
+    return pool[Math.floor(Math.random() * pool.length)].def;
+  },
+
+  /** 提交考试答案 */
+  submitExamAnswer(type, isCorrect, value) {
+    if (this._examSubmitted) return;
+    this._examSubmitted = true;
+
+    const q = this.examQuestions[this.examCurrent];
+    const word = q.word;
+    let correct = false;
+
+    if (type === 'fill') {
+      const input = document.getElementById('exam-input');
+      if (input) {
+        const answer = input.value.trim().toLowerCase();
+        correct = answer === word.word.toLowerCase();
+      }
+    } else if (type === 'reading') {
+      correct = (isCorrect === 1 && value === 'true') || (isCorrect === 0 && value === 'false');
+      // Actually, wasReadingCorrect stores the match value
+      if (type === 'reading') {
+        const matchExpected = this._examReadingMatch;
+        const userSaidCorrect = (value === 'true');
+        correct = (matchExpected === userSaidCorrect);
+      }
+    } else {
+      correct = isCorrect === 1;
+    }
+
+    if (correct) this.examScore.correct++;
+
+    // 标记按钮（选择题型）
+    document.querySelectorAll('.choice-option').forEach(btn => btn.disabled = true);
+    if (type !== 'fill') {
+      document.querySelectorAll('.choice-option').forEach((btn, i) => {
+        if (btn.querySelector('.choice-text')?.textContent === (correct ? value : '')) {
+          // Highlight what they chose
+        }
+      });
+    }
+
+    // 反馈
+    const feedback = document.getElementById('exam-feedback');
+    if (feedback) {
+      feedback.className = 'choice-feedback ' + (correct ? 'correct' : 'wrong');
+      feedback.classList.remove('hidden');
+      feedback.innerHTML = correct
+        ? `✅ 正确！<span style="font-size:13px;color:var(--text2)">${word.word} — ${word.def}</span>`
+        : `❌ 正确答案：<strong>${word.word}</strong> — ${word.def}`;
+    }
+
+    // 如果是 fill 类型，显示正确答案
+    if (type === 'fill') {
+      const input = document.getElementById('exam-input');
+      if (input) {
+        input.disabled = true;
+        input.className = 'exam-input ' + (correct ? 'correct' : 'wrong');
+      }
+    }
+
+    const next = document.getElementById('exam-next');
+    if (next) next.style.display = 'flex';
+  },
+
+  /** 考试下一题 */
+  nextExamQuestion() {
+    this._examSubmitted = false;
+    this.examCurrent++;
+    this.renderMockExam();
+  },
+
+  /** 格式化计时器显示 */
+  _formatExamTime(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  },
+
+  /** 启动考试计时器 */
+  _startExamTimer() {
+    if (this.examTimer) clearInterval(this.examTimer);
+    this.examTimer = setInterval(() => {
+      this.examTimeLeft--;
+      const timerEl = document.getElementById('exam-timer');
+      if (timerEl) timerEl.textContent = '⏱ ' + this._formatExamTime(this.examTimeLeft);
+
+      // 时间快到时变红
+      if (timerEl && this.examTimeLeft <= 60) {
+        timerEl.style.color = this.examTimeLeft <= 30 ? 'var(--danger)' : 'var(--warn)';
+        timerEl.style.animation = 'pulse 1s infinite';
+      }
+
+      if (this.examTimeLeft <= 0) {
+        clearInterval(this.examTimer);
+        this.examTimer = null;
+        this._finishExam();
+      }
+    }, 1000);
+  },
+
+  /** 完成考试 */
+  _finishExam() {
+    if (this.examTimer) { clearInterval(this.examTimer); this.examTimer = null; }
+
+    const total = this.examQuestions.length;
+    const correct = this.examScore.correct;
+    const pct = total > 0 ? Math.round(correct / total * 100) : 0;
+
+    // 评级
+    let grade, gradeColor;
+    if (pct >= 90) { grade = 'S · 卓越'; gradeColor = 'var(--primary)'; }
+    else if (pct >= 80) { grade = 'A · 优秀'; gradeColor = 'var(--accent)'; }
+    else if (pct >= 70) { grade = 'B · 良好'; gradeColor = 'var(--accent)'; }
+    else if (pct >= 60) { grade = 'C · 及格'; gradeColor = 'var(--warn)'; }
+    else { grade = 'D · 需努力'; gradeColor = 'var(--danger)'; }
+
+    document.getElementById('quiz-content').innerHTML = `
+      <div class="exam-result">
+        <div class="exam-grade" style="color:${gradeColor}">${grade}</div>
+        <div class="exam-score">${correct} / ${total}</div>
+        <div class="exam-pct">正确率 ${pct}%</div>
+        <div class="exam-stats-row">
+          <div class="exam-stat"><div class="exam-stat-value" style="color:var(--accent)">${correct}</div><div class="exam-stat-label">正确</div></div>
+          <div class="exam-stat"><div class="exam-stat-value" style="color:var(--danger)">${total - correct}</div><div class="exam-stat-label">错误</div></div>
+          <div class="exam-stat"><div class="exam-stat-value">${total}</div><div class="exam-stat-label">总题数</div></div>
+        </div>
+        <div style="display:flex;gap:12px;justify-content:center;margin-top:24px">
+          <button class="btn btn-primary" style="flex:none;padding:12px 24px" onclick="App.showQuizModePicker()">返回</button>
+          <button class="btn btn-outline" style="flex:none;padding:12px 24px" onclick="location.hash='#dashboard'">面板</button>
+        </div>
+      </div>`;
+  },
+
   // ============ 词库浏览（搜索防抖） ============
 
   renderWordList(query = '') {
@@ -1420,6 +2133,134 @@ const App = {
     });
     const r = '✅ 完成！找到 ' + found + ' 个已有词 + 新增 ' + added + ' 个自定义词 → 已加入「' + listName + '」';
     document.getElementById('import-result').innerHTML = r + '<br><button class="btn btn-outline" style="margin-top:8px;padding:6px 14px;font-size:13px" onclick="location.hash=\'#lists\'">去单词本查看</button>';
+  },
+
+  // ============ v4.0: 数据导出/备份 ============
+
+  /** 导出全部数据为 JSON 并下载 */
+  exportData() {
+    const data = Store.exportAllData();
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const date = new Date().toISOString().split('T')[0];
+    a.download = `cet4-backup-${date}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    this.showToast('📦 数据已导出');
+  },
+
+  /** 导入数据（通过文件选择） */
+  importData() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const data = JSON.parse(ev.target.result);
+          const result = Store.importAllData(data);
+          this.showToast(result.msg);
+          if (result.success) {
+            // 刷新面板
+            if (location.hash === '#dashboard') this.renderDashboard();
+          }
+        } catch (err) {
+          this.showToast('❌ 解析失败：' + err.message);
+        }
+      };
+      reader.readAsText(file, 'UTF-8');
+    };
+    input.click();
+  },
+
+  // ============ v4.0: 设置页面 ============
+
+  /** 渲染设置页面 */
+  renderSettings() {
+    const reminder = Store.getReminderSetting();
+    document.getElementById('settings-content').innerHTML = `
+      <div class="card"><div class="card-content">
+        <div class="section-label" style="margin-bottom:12px">🔔 提醒设置</div>
+        <div class="reminder-row">
+          <label class="toggle-label">
+            <span>每日提醒复习</span>
+            <input type="checkbox" id="reminder-toggle" ${reminder.enabled ? 'checked' : ''} onchange="App.toggleReminder(this.checked)" />
+            <span class="toggle-switch"></span>
+          </label>
+        </div>
+        <div id="reminder-time-row" class="reminder-time-row" style="${reminder.enabled ? '' : 'display:none'}">
+          <span style="font-size:14px">提醒时间：</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="reminder-hour" class="reminder-select" onchange="App.saveReminderTime()">
+              ${Array.from({length: 24}, (_, i) => `<option value="${i}" ${reminder.hour === i ? 'selected' : ''}>${i.toString().padStart(2, '0')}</option>`).join('')}
+            </select>
+            <span style="font-size:14px">:</span>
+            <select id="reminder-minute" class="reminder-select" onchange="App.saveReminderTime()">
+              ${[0, 15, 30, 45].map(m => `<option value="${m}" ${reminder.minute === m ? 'selected' : ''}>${m.toString().padStart(2, '0')}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin-top:8px">💡 需要浏览器通知权限才能生效</div>
+      </div></div>
+
+      <div class="card"><div class="card-content">
+        <div class="section-label" style="margin-bottom:12px">📤 数据管理</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary" style="flex:1;min-width:120px" onclick="App.exportData()">📤 导出数据</button>
+          <button class="btn btn-outline" style="flex:1;min-width:120px" onclick="App.importData()">📥 导入数据</button>
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin-top:8px">导出包含全部学习记录、打卡、测验、收藏、单词本和导入词</div>
+      </div></div>`;
+  },
+
+  /** 切换每日提醒 */
+  toggleReminder(enabled) {
+    const setting = Store.getReminderSetting();
+    setting.enabled = enabled;
+    Store.saveReminderSetting(setting);
+    const row = document.getElementById('reminder-time-row');
+    if (row) row.style.display = enabled ? '' : 'none';
+
+    if (enabled && 'Notification' in window) {
+      if (Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
+      // 尝试注册定期通知
+      this._registerPeriodicReminder();
+    }
+
+    this.showToast(enabled ? '🔔 每日提醒已开启' : '🔕 每日提醒已关闭');
+  },
+
+  /** 保存提醒时间 */
+  saveReminderTime() {
+    const hour = parseInt(document.getElementById('reminder-hour')?.value || '9');
+    const minute = parseInt(document.getElementById('reminder-minute')?.value || '0');
+    const setting = Store.getReminderSetting();
+    setting.hour = hour;
+    setting.minute = minute;
+    Store.saveReminderSetting(setting);
+  },
+
+  /** 注册定期提醒（通过 Service Worker） */
+  _registerPeriodicReminder() {
+    if (!('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.ready.then(reg => {
+      // 尝试 Periodic Background Sync API
+      if ('periodicSync' in reg) {
+        reg.periodicSync.register('cet4-reminder', {
+          minInterval: 24 * 60 * 60 * 1000 // 每天
+        }).catch(() => {});
+      }
+    });
   },
 
   // ============ 通用 ============

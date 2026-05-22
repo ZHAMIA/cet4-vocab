@@ -1,9 +1,11 @@
 /**
  * store.js — localStorage 封装
  * 管理学习记录、打卡数据、用户进度
+ * v4.0 新增：导出/导入、提醒设置
  */
 const Store = {
-  // 学习记录格式: { [wordId]: { level: 0-5, nextReview: timestamp, interval: days, easiness: 2.5, reps: 0, lastReview: timestamp } }
+  // 学习记录格式: { [wordId]: { level: 0-5, nextReview: timestamp, interval: days, stability, difficulty, reps: 0, lastReview: timestamp } }
+  // v4.0 使用 FSRS 格式: { stability, difficulty, interval, reps, level, nextReview, lastReview }
   _key: 'cet4_learn_data',
   _streakKey: 'cet4_streak',
   _quizKey: 'cet4_quiz_log',
@@ -351,5 +353,61 @@ const Store = {
       todayCorrect: todayData.correct || 0,
       todayTotal: todayData.total || 0,
     };
+  },
+
+  // ===== v4.0: 提醒设置 =====
+  _reminderKey: 'cet4_reminder',
+
+  /** 获取提醒设置 */
+  getReminderSetting() {
+    try {
+      return JSON.parse(localStorage.getItem(this._reminderKey)) || { enabled: false, hour: 9, minute: 0 };
+    } catch { return { enabled: false, hour: 9, minute: 0 }; }
+  },
+
+  /** 保存提醒设置 */
+  saveReminderSetting(setting) {
+    localStorage.setItem(this._reminderKey, JSON.stringify(setting));
+  },
+
+  // ===== v4.0: 数据导出 =====
+  /** 导出全部数据为 JSON 对象 */
+  exportAllData() {
+    return {
+      version: '4.0',
+      exportTime: Date.now(),
+      learn_data: this.getLearnData(),
+      streak: this.getStreakData(),
+      quiz_log: this.getQuizHistory(),
+      bookmarks: this.getBookmarks(),
+      wordlists: this.getWordLists(),
+      imported: this.getImportedWords(),
+      achievements: this.getEarnedAchievements(),
+    };
+  },
+
+  /** 从 JSON 对象导入全部数据 */
+  importAllData(data) {
+    if (!data || !data.version) return { success: false, msg: '无效的数据文件' };
+    try {
+      if (data.learn_data) this.setLearnData(data.learn_data);
+      if (data.streak) this.saveStreakData(data.streak);
+      if (data.quiz_log) {
+        localStorage.setItem(this._quizKey, JSON.stringify(data.quiz_log));
+      }
+      if (data.bookmarks) {
+        localStorage.setItem(this._bookmarkKey, JSON.stringify(data.bookmarks));
+      }
+      if (data.wordlists) this.saveWordLists(data.wordlists);
+      if (data.imported) {
+        localStorage.setItem(this._importedKey, JSON.stringify(data.imported));
+      }
+      if (data.achievements) {
+        localStorage.setItem(this._achiKey, JSON.stringify(data.achievements));
+      }
+      return { success: true, msg: '✅ 数据导入成功！' };
+    } catch (e) {
+      return { success: false, msg: '❌ 导入失败：' + e.message };
+    }
   }
 };

@@ -163,3 +163,7 @@ const TrickyWords = [
   { id: 319, word: 'weather', pos: 'v.', phonetic: '/ˈweðər/', def: '平安度过（困难）', note: '常见义：天气（n.）', example: 'The company weathered the financial crisis.', example_cn: '这家公司平安度过了金融危机。', collocation: 'weather the storm 渡过难关 / weather the crisis 度过危机', year: '2022', type: '熟词生义' },
   { id: 320, word: 'doctor', pos: 'v.', phonetic: '/ˈdɑːktər/', def: '篡改，伪造', note: '常见义：医生（n.）', example: 'They doctored the official report.', example_cn: '他们篡改了官方报告。', collocation: 'doctor the evidence 篡改证据 / doctor the numbers 篡改数字', year: '2023', type: '熟词生义' },
 ];
+
+// ===== 四级核心高频词扩充（V3） =====
+const CoreWordsV2 = [
+

@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-192.svg">
-  <title>四级单词 · CET-4 高频词库 v3.0</title>
+  <title>四级单词 · CET-4 高频词库 v4.0</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -142,6 +142,21 @@
   <div id="page-import" class="page page-fade hidden">
     <h1 class="page-title">📥 导入单词</h1>
     <div id="import-content"></div>
+    <!-- v4.0: 数据管理区 -->
+    <div id="data-management-section" class="card"><div class="card-content">
+      <div class="section-label" style="margin-bottom:12px">📤 数据管理</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" style="flex:1;min-width:120px" onclick="App.exportData()">📤 导出数据</button>
+        <button class="btn btn-outline" style="flex:1;min-width:120px" onclick="App.importData()">📥 导入数据</button>
+      </div>
+      <div style="font-size:12px;color:var(--text2);margin-top:8px">导出全部学习记录、打卡、测验、收藏、单词本和导入词</div>
+    </div></div>
+  </div>
+
+  <!-- ===== v4.0: 页面：设置 ===== -->
+  <div id="page-settings" class="page page-fade hidden">
+    <h1 class="page-title">⚙️ 设置</h1>
+    <div id="settings-content"></div>
   </div>
 
 
@@ -169,6 +184,11 @@
     <button class="nav-item" data-page="lists" onclick="location.hash='#lists'">
       <span class="nav-icon">📁</span>
       <span>单词本</span>
+      <span class="nav-indicator"></span>
+    </button>
+    <button class="nav-item" data-page="settings" onclick="location.hash='#settings'">
+      <span class="nav-icon">⚙️</span>
+      <span>设置</span>
       <span class="nav-indicator"></span>
     </button>
   </nav>
