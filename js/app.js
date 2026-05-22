@@ -1089,7 +1089,7 @@ const App = {
         feedback.className = 'spelling-feedback correct';
         this.onSpellingCorrect(word);
         document.getElementById('spelling-reveal')?.classList.remove('hidden');
-        document.getElementById('spelling-next')?.style.display = 'block';
+        const nxt = document.getElementById('spelling-next'); if (nxt) nxt.style.display = 'block';
         inputEl.disabled = true;
       } else if (input.length >= target.length + 1) {
         // 拼写错误
