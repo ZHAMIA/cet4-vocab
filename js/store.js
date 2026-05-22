@@ -179,17 +179,6 @@ const Store = {
     }
   },
 
-  getAllWords() {
-    return [...WordDB, ...this.getImportedWords()];
-  },
-
-  findWord(id) {
-    const n = Number(id);
-    const w = WordDB.find(w => w.id === n);
-    if (w) return w;
-    return this.getImportedWords().find(w => w.id === n);
-  },
-
   // ===== 导入的自定义词 =====
   _importedKey: 'cet4_imported',
   _nextIdKey: 'cet4_next_import_id',

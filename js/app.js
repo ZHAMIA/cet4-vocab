@@ -1352,7 +1352,7 @@ const App = {
   startListeningQuiz() {
     Store.clearQuizProgress();
     this.quizMode = 'listening';
-    const words = this.getWordDB().length > 0 ? this.getWordDB() : [...WordDB, ...ListeningWords];
+    const words = this.getWordDB().length > 0 ? this.getWordDB() : [...WordDB];
     const listeningPool = words.sort(() => Math.random() - 0.5);
     this.quizWords = listeningPool.slice(0, Math.min(15, listeningPool.length));
     this.quizIndex = 0;
