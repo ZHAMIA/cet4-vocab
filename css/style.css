@@ -683,6 +683,42 @@ body {
   margin-bottom: 12px;
   font-size: 14px;
   color: var(--text2);
+  gap: 8px;
+}
+
+/* 退出测验按钮 */
+.quiz-exit-btn {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: var(--surface2);
+  color: var(--text2);
+  border-radius: 50%;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  margin-left: auto;
+}
+.quiz-exit-btn:hover,
+.quiz-exit-btn:active {
+  background: var(--danger-light, rgba(255,59,48,0.1));
+  color: var(--danger);
+}
+
+/* 恢复测验提示卡片 */
+.resume-card {
+  background: var(--surface-glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--primary);
+  border-radius: 16px;
+  padding: 20px;
+  text-align: center;
+  margin-bottom: 16px;
+  animation: pageFadeIn 0.3s ease;
 }
 .quiz-card { text-align: center; }
 .quiz-prompt {

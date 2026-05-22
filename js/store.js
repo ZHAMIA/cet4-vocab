@@ -215,6 +215,26 @@ const Store = {
   },
 
   // Override getAllWords to include imported words
+  // ===== 测验进度保存 =====
+  _quizProgressKey: 'cet4_quiz_in_progress',
+
+  /** 保存当前测验进度 */
+  saveQuizProgress(data) {
+    localStorage.setItem(this._quizProgressKey, JSON.stringify(data));
+  },
+
+  /** 读取已保存的测验进度（无进度时返回 null） */
+  loadQuizProgress() {
+    try {
+      return JSON.parse(localStorage.getItem(this._quizProgressKey));
+    } catch { return null; }
+  },
+
+  /** 清除已保存的测验进度 */
+  clearQuizProgress() {
+    localStorage.removeItem(this._quizProgressKey);
+  },
+
   // ===== 测验记录 =====
   _quizKey: 'cet4_quiz_history',
 

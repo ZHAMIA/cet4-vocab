@@ -1170,7 +1170,144 @@ const App = {
 
   // ============ 闪卡测验 ============
 
+  // ============ 测验进度保存/恢复 ============
+
+  /** 保存当前测验进度到 localStorage */
+  saveQuizProgress() {
+    const data = {
+      mode: this.quizMode,
+      quizWords: this.quizWords,
+      quizIndex: this.quizIndex,
+      spellingMode: this.spellingMode,
+      currentStudyMode: this.currentStudyMode,
+      startTime: Date.now(),
+    };
+    // 真题模拟特有状态
+    if (this.quizMode === 'exam') {
+      data.examWords = this.examWords;
+      data.examQuestions = this.examQuestions;
+      data.examCurrent = this.examCurrent;
+      data.examScore = this.examScore;
+      data.examStarted = this.examStarted;
+      data.examTimeLeft = this.examTimeLeft;
+      data._examSubmitted = this._examSubmitted;
+      data._examReadingMatch = this._examReadingMatch;
+    }
+    // 选择题特有状态
+    if (this.quizMode === 'choice') {
+      data.mcCorrectCount = this.mcCorrectCount;
+      data.mcTotalCount = this.mcTotalCount;
+      data._choiceSubmitted = this._choiceSubmitted;
+    }
+    Store.saveQuizProgress(data);
+  },
+
+  /** 退出当前测验（保存进度并回到模式选择） */
+  exitQuiz() {
+    this.saveQuizProgress();
+    this.showQuizModePicker();
+  },
+
+  /** 放弃已保存的进度 */
+  discardQuizProgress() {
+    Store.clearQuizProgress();
+    this.showQuizModePicker();
+  },
+
+  /** 恢复已保存的测验 */
+  resumeQuiz(saved) {
+    Store.clearQuizProgress();
+    this.quizMode = saved.mode;
+    this.quizWords = saved.quizWords;
+    this.quizIndex = saved.quizIndex;
+    this.spellingMode = saved.spellingMode || false;
+    this.currentStudyMode = saved.currentStudyMode || 'en2cn';
+
+    if (this.quizMode === 'exam') {
+      this.examWords = saved.examWords;
+      this.examQuestions = saved.examQuestions;
+      this.examCurrent = saved.examCurrent;
+      this.examScore = saved.examScore;
+      this.examStarted = saved.examStarted;
+      this.examTimeLeft = saved.examTimeLeft;
+      this._examSubmitted = saved._examSubmitted || false;
+      this._examReadingMatch = saved._examReadingMatch;
+      // 如果有计时器未超时，重新启动
+      if (this.examStarted) {
+        this._startExamTimer();
+      }
+    }
+
+    if (this.quizMode === 'choice') {
+      this.mcCorrectCount = saved.mcCorrectCount || 0;
+      this.mcTotalCount = saved.mcTotalCount || 0;
+      this._choiceSubmitted = saved._choiceSubmitted || false;
+    }
+
+    this.renderQuiz();
+  },
+
   showQuizModePicker() {
+    // 检测是否有未完成的测验
+    const saved = Store.loadQuizProgress();
+    if (saved) {
+      // 显示恢复提示
+      const modeNames = {
+        normal: '英⇄中 闪卡',
+        listening: '听音辨义',
+        spelling: '拼写模式',
+        choice: '选择题',
+        exam: '真题模拟',
+      };
+      const progressPct = saved.quizWords.length > 0
+        ? Math.round(saved.quizIndex / saved.quizWords.length * 100)
+        : 0;
+      document.getElementById('quiz-content').innerHTML = `
+        <div class="quiz-mode-picker">
+          <h2 style="margin-bottom:12px">📝 选择测验模式</h2>
+          <div class="resume-card">
+            <div style="font-size:28px;margin-bottom:8px">📂</div>
+            <div style="font-weight:600;font-size:16px">检测到上次未完成的测验</div>
+            <div style="font-size:13px;color:var(--text2);margin:4px 0 12px">
+              ${modeNames[saved.mode] || saved.mode} · 进度 ${progressPct}% （${saved.quizIndex}/${saved.quizWords.length}）
+            </div>
+            <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+              <button class="btn btn-primary" onclick="App.resumeQuiz(Store.loadQuizProgress())">📂 继续答题</button>
+              <button class="btn btn-outline" onclick="App.discardQuizProgress()">🔄 重新开始</button>
+              <button class="btn btn-outline" onclick="App.discardQuizProgress()">✕ 算了</button>
+            </div>
+          </div>
+          <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px">
+            <div style="font-size:14px;color:var(--text2);margin-bottom:12px">— 或开始新的测验 —</div>
+            <div class="mode-card" onclick="App.discardQuizProgress();App.startNormalQuiz()">
+              <div style="font-size:32px">📝</div>
+              <div class="mode-name">英⇄中 闪卡</div>
+              <div class="mode-desc">看英文选中文 / 看中文拼英文</div>
+            </div>
+            <div class="mode-card" onclick="App.discardQuizProgress();App.startListeningQuiz()">
+              <div style="font-size:32px">🎧</div>
+              <div class="mode-name">听音辨义</div>
+              <div class="mode-desc">听单词发音，选择正确释义（专练听力）</div>
+            </div>
+            <div class="mode-card" onclick="App.discardQuizProgress();App.startSpellingQuiz()">
+              <div style="font-size:32px">✍️</div>
+              <div class="mode-name">拼写模式</div>
+              <div class="mode-desc">看中文释义，输入英文单词（练拼写）</div>
+            </div>
+            <div class="mode-card" onclick="App.discardQuizProgress();App.startMultipleChoiceQuiz()">
+              <div style="font-size:32px">✅</div>
+              <div class="mode-name">选择题</div>
+              <div class="mode-desc">四选一，选完立即反馈，计入学习记录</div>
+            </div>
+            <div class="mode-card" onclick="App.discardQuizProgress();App.startMockExam()">
+              <div style="font-size:32px">🎯</div>
+              <div class="mode-name">真题模拟</div>
+              <div class="mode-desc">30 题混合题型 · 15 分钟限时</div>
+            </div>
+          </div>
+        </div>`;
+      return;
+    }
     document.getElementById('quiz-content').innerHTML = `
       <div class="quiz-mode-picker">
         <h2 style="margin-bottom:16px">选择测验模式</h2>
@@ -1203,6 +1340,7 @@ const App = {
   },
 
   startNormalQuiz() {
+    Store.clearQuizProgress();
     this.quizMode = 'normal';
     const words = this.getWordDB().length > 0 ? this.getWordDB() : [...WordDB];
     this.quizWords = words.sort(() => Math.random() - 0.5).slice(0, Math.min(20, words.length));
@@ -1212,6 +1350,7 @@ const App = {
   },
 
   startListeningQuiz() {
+    Store.clearQuizProgress();
     this.quizMode = 'listening';
     const words = this.getWordDB().length > 0 ? this.getWordDB() : [...WordDB, ...ListeningWords];
     const listeningPool = words.sort(() => Math.random() - 0.5);
@@ -1223,6 +1362,7 @@ const App = {
   // ============ ✍️ 拼写模式（v3.0） ============
 
   startSpellingQuiz() {
+    Store.clearQuizProgress();
     this.quizMode = 'spelling';
     const words = this.getWordDB().length > 0 ? this.getWordDB() : [...WordDB];
     this.quizWords = words.sort(() => Math.random() - 0.5).slice(0, Math.min(15, words.length));
@@ -1235,6 +1375,7 @@ const App = {
 
   renderQuiz() {
     if (this.quizIndex >= this.quizWords.length) {
+      Store.clearQuizProgress();
       document.getElementById('quiz-content').innerHTML = `
         <div class="quiz-complete">
           <div class="complete-icon">🎉</div>
@@ -1265,6 +1406,7 @@ const App = {
       <div class="quiz-progress">
         <span>第 ${this.quizIndex + 1} / ${this.quizWords.length} 题 · ✍️ 拼写模式</span>
         <span class="badge">${wordLen} 字母</span>
+        <button class="quiz-exit-btn" onclick="App.exitQuiz()" title="退出测验">✕</button>
       </div>
       <div class="card quiz-card">
         <div class="quiz-prompt" style="padding:24px 16px">
@@ -1372,6 +1514,7 @@ const App = {
     Store.logDailyActivity(today, 'correct');
     Store.logDailyActivity(today, 'total');
     Store.logQuiz(word.id, true, 'spelling');
+    this.saveQuizProgress();
   },
 
   /** ✍️ 跳过拼写 */
@@ -1385,6 +1528,7 @@ const App = {
       Store.logDailyActivity(today, 'total');
       Store.logQuiz(word.id, false, 'spelling');
     }
+    this.saveQuizProgress();
     this.nextSpelling();
   },
 
@@ -1406,6 +1550,7 @@ const App = {
     Store.logDailyActivity(today, 'review');
     Store.logDailyActivity(today, 'total');
     Store.logQuiz(word.id, false, 'spelling');
+    this.saveQuizProgress();
   },
 
   /** ✍️ 下一题 */
@@ -1423,6 +1568,7 @@ const App = {
     document.getElementById('quiz-content').innerHTML = `
       <div class="quiz-progress">
         <span>第 ${this.quizIndex + 1} / ${this.quizWords.length} 题 · ${this.currentStudyMode === 'en2cn' ? '英→中' : '中→英'}</span>
+        <button class="quiz-exit-btn" onclick="App.exitQuiz()" title="退出测验">✕</button>
       </div>
       <div class="card quiz-card">
         <div class="quiz-prompt">
@@ -1451,6 +1597,7 @@ const App = {
     document.getElementById('quiz-content').innerHTML = `
       <div class="quiz-progress">
         <span>第 ${this.quizIndex + 1} / ${this.quizWords.length} 题 · 🎧 听音辨义</span>
+        <button class="quiz-exit-btn" onclick="App.exitQuiz()" title="退出测验">✕</button>
       </div>
       <div class="card quiz-card listening-card">
         <div class="listening-header">
@@ -1496,6 +1643,7 @@ const App = {
     if (isCorrect) Store.logDailyActivity(today, 'correct');
     Store.logDailyActivity(today, 'total');
     Store.logQuiz(wordId, isCorrect, 'listening');
+    this.saveQuizProgress();
   },
 
   continueListening() {
@@ -1514,6 +1662,7 @@ const App = {
     if (quality >= 3) Store.logDailyActivity(today, 'correct');
     Store.logDailyActivity(today, 'total');
     Store.logQuiz(word.id, quality >= 3, 'normal');
+    this.saveQuizProgress();
     document.querySelectorAll('.btn-quiz').forEach(b => b.disabled = true);
     document.querySelectorAll('.btn-quiz').forEach((b, i) => { if ([1, 3, 5][i] === quality) b.classList.add('selected'); });
     setTimeout(() => { this.quizIndex++; this.renderQuiz(); }, 800);
@@ -1523,6 +1672,7 @@ const App = {
 
   /** 开始选择题测验 */
   startMultipleChoiceQuiz() {
+    Store.clearQuizProgress();
     this.quizMode = 'choice';
     const words = this.getWordDB().length > 0 ? this.getWordDB() : [...WordDB];
     this.quizWords = words.sort(() => Math.random() - 0.5).slice(0, Math.min(20, words.length));
@@ -1536,6 +1686,7 @@ const App = {
   renderMultipleChoice() {
     if (this.quizIndex >= this.quizWords.length) {
       // 完成
+      Store.clearQuizProgress();
       const pct = this.mcTotalCount > 0 ? Math.round(this.mcCorrectCount / this.mcTotalCount * 100) : 0;
       document.getElementById('quiz-content').innerHTML = `
         <div class="quiz-complete">
@@ -1563,6 +1714,7 @@ const App = {
       <div class="quiz-progress">
         <span>第 ${this.quizIndex + 1} / ${this.quizWords.length} 题 · ✍️ 选择题</span>
         <span class="badge" style="background:${this.mcCorrectCount > 0 ? 'rgba(52,199,89,0.1);color:var(--accent)' : 'var(--surface2);color:var(--text2)'}">✅ ${this.mcCorrectCount}</span>
+        <button class="quiz-exit-btn" onclick="App.exitQuiz()" title="退出测验">✕</button>
       </div>
       <div class="card quiz-card">
         <div class="quiz-prompt" style="padding:20px 16px">
@@ -1630,6 +1782,7 @@ const App = {
     if (isCorrect) Store.logDailyActivity(today, 'correct');
     Store.logDailyActivity(today, 'total');
     Store.logQuiz(word.id, isCorrect, 'choice');
+    this.saveQuizProgress();
 
     // 反馈
     const feedback = document.getElementById('choice-feedback');
@@ -1656,6 +1809,7 @@ const App = {
 
   /** 开始真题模拟 */
   startMockExam() {
+    Store.clearQuizProgress();
     this.quizMode = 'exam';
     this.examAnswers = [];
     this.examStarted = false;
@@ -1799,6 +1953,7 @@ const App = {
       <div class="exam-header">
         <span class="exam-badge">🎯 真题模拟</span>
         <span class="exam-timer" id="exam-timer">⏱ ${timeStr}</span>
+        <button class="quiz-exit-btn" onclick="App.exitQuiz()" title="退出测验">✕</button>
       </div>
       <div class="quiz-progress">
         <span>第 ${this.examCurrent + 1} / ${this.examQuestions.length} 题</span>
@@ -1854,18 +2009,15 @@ const App = {
         correct = answer === word.word.toLowerCase();
       }
     } else if (type === 'reading') {
-      correct = (isCorrect === 1 && value === 'true') || (isCorrect === 0 && value === 'false');
-      // Actually, wasReadingCorrect stores the match value
-      if (type === 'reading') {
-        const matchExpected = this._examReadingMatch;
-        const userSaidCorrect = (value === 'true');
-        correct = (matchExpected === userSaidCorrect);
-      }
+      const matchExpected = this._examReadingMatch;
+      const userSaidCorrect = (value === 'true');
+      correct = (matchExpected === userSaidCorrect);
     } else {
       correct = isCorrect === 1;
     }
 
     if (correct) this.examScore.correct++;
+    this.saveQuizProgress();
 
     // 标记按钮（选择题型）
     document.querySelectorAll('.choice-option').forEach(btn => btn.disabled = true);
@@ -1939,6 +2091,7 @@ const App = {
   /** 完成考试 */
   _finishExam() {
     if (this.examTimer) { clearInterval(this.examTimer); this.examTimer = null; }
+    Store.clearQuizProgress();
 
     const total = this.examQuestions.length;
     const correct = this.examScore.correct;
