@@ -1,5 +1,6 @@
 /**
- * app.js — 核心应用逻辑 + 路由 + 页面渲染
+ * app.js — CET-4 Vocab v3.0 核心应用逻辑 + 路由 + 页面渲染
+ * 新增：暗色模式、拼写模式、统计图表、手势滑动、UI 打磨、PWA 支持
  */
 const App = {
   currentSource: 'core',
@@ -12,25 +13,112 @@ const App = {
   currentListName: null,
   quizMode: 'normal',
 
-  getWordDB() {
-    if (this.currentSource === 'list') {
-      const ids = this.currentListName ? Store.getWordList(this.currentListName) : Store.getAllWordsInLists();
-      return ids.map(id => Store.findWord(id)).filter(Boolean);
-    }
-    return Store.getWordsBySource(this.currentSource);
+  // 拼写模式状态
+  spellingMode: false,
+  spellingWord: null,
+  spellingInput: '',
+  spellingCorrect: false,
+
+  // 滑动状态
+  swipeStartX: 0,
+  swipeStartY: 0,
+  swiping: false,
+
+  // 长按定时器
+  longPressTimer: null,
+  longPressWordId: null,
+
+  // 搜索防抖
+  searchTimer: null,
+  _searchTimer: null,
+
+  // ============ 工具方法 ============
+
+  /** 防抖工具 */
+  debounce(fn, delay) {
+    return (...args) => {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = setTimeout(() => fn.apply(this, args), delay);
+    };
   },
 
+  /** Ripple 水波纹效果 */
+  createRipple(e) {
+    const el = e.currentTarget;
+    const rect = el.getBoundingClientRect();
+    const size = Math.max(rect.width, rect.height);
+    const x = (e.clientX || e.touches?.[0]?.clientX || rect.left + rect.width / 2) - rect.left - size / 2;
+    const y = (e.clientY || e.touches?.[0]?.clientY || rect.top + rect.height / 2) - rect.top - size / 2;
+    const ripple = document.createElement('span');
+    ripple.className = 'ripple-effect';
+    ripple.style.width = ripple.style.height = size + 'px';
+    ripple.style.left = x + 'px';
+    ripple.style.top = y + 'px';
+    el.appendChild(ripple);
+    ripple.addEventListener('animationend', () => ripple.remove());
+  },
+
+  // ============ 暗色模式 ============
+
+  /** 切换暗色/亮色主题 */
+  toggleTheme() {
+    const html = document.documentElement;
+    const isDark = html.getAttribute('data-theme') === 'dark';
+    html.setAttribute('data-theme', isDark ? '' : 'dark');
+    localStorage.setItem('cet4_theme', isDark ? '' : 'dark');
+    this.updateThemeUI();
+    this.updateMetaThemeColor();
+  },
+
+  /** 更新主题切换按钮图标 */
+  updateThemeUI() {
+    const btn = document.getElementById('theme-toggle');
+    if (!btn) return;
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    btn.textContent = isDark ? '☀️' : '🌙';
+  },
+
+  /** 更新 meta theme-color */
+  updateMetaThemeColor() {
+    const meta = document.getElementById('meta-theme-color');
+    if (!meta) return;
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    meta.content = isDark ? '#0f1729' : '#f2f4f8';
+  },
+
+  // ============ 初始化 & 路由 ============
+
   init() {
+    // 初始化暗色模式
+    this.updateThemeUI();
+    this.updateMetaThemeColor();
+
     this.router();
     window.addEventListener('hashchange', () => this.router());
+
+    // 水波纹全局委托
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn, .action-btn, .nav-btn, .listening-option, .listening-icon');
+      if (btn) this.createRipple({ currentTarget: btn, clientX: e.clientX, clientY: e.clientY });
+    });
+
     // 键盘快捷键
     document.addEventListener('keydown', (e) => {
       const onStudy = location.hash === '#study';
       const inInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName);
+
+      // 快捷键帮助 (? / H)
+      if (e.key === '?' || (e.key === 'h' || e.key === 'H')) {
+        if (!inInput) { e.preventDefault(); this.toggleShortcutsHelp(); }
+        return;
+      }
+
       if (inInput) return;
       if (!onStudy) return;
+
       if (e.key === ' ' || e.key === 'Spacebar') {
         e.preventDefault();
+        if (this.spellingMode) return; // 拼写模式下空格不触发揭示
         this.studyReveal();
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
@@ -48,12 +136,31 @@ const App = {
         if (w && w.example) this.speak(w.example);
       }
     });
+
+    // 长按事件
+    this.setupLongPress();
+
+    // 监听暗色模式系统变化
+    if (window.matchMedia) {
+      const mq = window.matchMedia('(prefers-color-scheme: dark)');
+      mq.addEventListener('change', () => {
+        const saved = localStorage.getItem('cet4_theme');
+        if (!saved) {
+          document.documentElement.setAttribute('data-theme', mq.matches ? 'dark' : '');
+          this.updateThemeUI();
+          this.updateMetaThemeColor();
+        }
+      });
+    }
   },
 
   router() {
     const hash = location.hash || '#dashboard';
     document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+
+    // 停止长按定时器
+    if (this.longPressTimer) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
 
     switch (hash) {
       case '#dashboard':
@@ -69,7 +176,13 @@ const App = {
       case '#quiz':
         document.getElementById('page-quiz')?.classList.remove('hidden');
         document.querySelector('[data-page="quiz"]')?.classList.add('active');
+        this.quizMode = 'normal';
         this.showQuizModePicker();
+        break;
+      case '#spelling':
+        document.getElementById('page-quiz')?.classList.remove('hidden');
+        document.querySelector('[data-page="quiz"]')?.classList.add('active');
+        this.startSpellingQuiz();
         break;
       case '#words':
         document.getElementById('page-words')?.classList.remove('hidden');
@@ -89,16 +202,124 @@ const App = {
     }
   },
 
+  getWordDB() {
+    if (this.currentSource === 'list') {
+      const ids = this.currentListName ? Store.getWordList(this.currentListName) : Store.getAllWordsInLists();
+      return ids.map(id => Store.findWord(id)).filter(Boolean);
+    }
+    return Store.getWordsBySource(this.currentSource);
+  },
+
+  // ============ 快捷键帮助 ============
+
+  toggleShortcutsHelp() {
+    const el = document.getElementById('shortcuts-help');
+    if (el) el.classList.toggle('hidden');
+  },
+
+  closeShortcutsHelp() {
+    const el = document.getElementById('shortcuts-help');
+    if (el) el.classList.add('hidden');
+  },
+
+  // ============ 长按快捷菜单 ============
+
+  setupLongPress() {
+    document.addEventListener('touchstart', (e) => {
+      const wordEl = e.target.closest('.word-word');
+      if (!wordEl || location.hash !== '#study') return;
+      const words = this.getWordDB();
+      const word = words[this.currentWordIndex];
+      if (!word) return;
+      this.longPressWordId = word.id;
+      this.longPressTimer = setTimeout(() => {
+        this.longPressTimer = null;
+        this.showLongpressMenu(word.id);
+      }, 500);
+    }, { passive: true });
+
+    document.addEventListener('touchend', () => {
+      if (this.longPressTimer) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
+    }, { passive: true });
+
+    document.addEventListener('touchmove', () => {
+      if (this.longPressTimer) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
+    }, { passive: true });
+  },
+
+  showLongpressMenu(wordId) {
+    const el = document.getElementById('longpress-menu');
+    if (el) el.classList.remove('hidden');
+    this.longPressWordId = wordId;
+  },
+
+  closeLongpressMenu() {
+    const el = document.getElementById('longpress-menu');
+    if (el) el.classList.add('hidden');
+    this.longPressWordId = null;
+  },
+
+  longpressAction(action) {
+    const word = Store.findWord(this.longPressWordId);
+    this.closeLongpressMenu();
+    if (!word) return;
+
+    switch (action) {
+      case 'bookmark':
+        this.toggleBookmark(word.id);
+        break;
+      case 'copy':
+        navigator.clipboard?.writeText(word.word).then(() => {
+          this.showToast('已复制: ' + word.word);
+        }).catch(() => {});
+        break;
+      case 'speak':
+        this.speak(word.word);
+        break;
+      case 'addToList':
+        this.showAddToList(word.id);
+        break;
+    }
+  },
+
+  /** Toast 提示 */
+  showToast(msg, duration = 2000) {
+    let toast = document.getElementById('app-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'app-toast';
+      toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--surface-glass);backdrop-filter:blur(12px);border:1px solid var(--border);border-radius:12px;padding:10px 20px;font-size:14px;box-shadow:var(--shadow);z-index:300;transition:opacity 0.3s,transform 0.3s';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateX(-50%) translateY(0)';
+    clearTimeout(toast._hideTimer);
+    toast._hideTimer = setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateX(-50%) translateY(10px)';
+    }, duration);
+  },
+
   // ============ 仪表盘 ============
+
   renderDashboard() {
     const stats = Store.getStats();
     const sources = Store.getWordSources();
     const learnData = Store.getLearnData();
 
-    document.getElementById('stat-learned').textContent = stats.totalLearned;
-    document.getElementById('stat-mastered').textContent = stats.totalMastered;
+    // 数字滚动动画
+    this.animateNumber('stat-learned', stats.totalLearned);
+    this.animateNumber('stat-mastered', stats.totalMastered);
     document.getElementById('stat-streak').textContent = `${stats.streak} 天`;
-    document.getElementById('stat-today').textContent = stats.todayLearned + stats.todayReviewed;
+    this.animateNumber('stat-today', stats.todayLearned + stats.todayReviewed);
+
+    // 待复习 Widget
+    this.renderDueWidget();
+
+    // 统计图表
+    this.renderTrendChart();
+    this.renderDistributionChart();
 
     Calendar.render('calendar-container', Store.getStreakData());
 
@@ -137,7 +358,15 @@ const App = {
     const curSource = Store.getWordSources().find(s => s.id === this.currentSource);
     let html = '';
     if (dueWords.length > 0) {
-      html += '<div class="task-item">📝 复习 <strong>' + dueWords.length + '</strong> 个待复习单词</div>';
+      const dueCount = dueWords.filter(([id]) => {
+        const w = Store.findWord(Number(id));
+        return w && (this.currentSource === 'core' || w.id <= 100) ||
+               (this.currentSource === 'listening' || (w.id >= 200 && w.id < 300)) ||
+               (this.currentSource === 'tricky' || w.id >= 300);
+      }).length;
+      html += '<div class="task-item">📝 复习 <strong>' + dueWords.length + '</strong> 个待复习单词' +
+        (dueCount !== dueWords.length ? '（当前词库 ' + dueCount + ' 个）' : '') +
+        '</div>';
     }
     const words = this.getWordDB();
     if (words.length > 0) {
@@ -166,7 +395,6 @@ const App = {
       diagHtml += '<div class="diag-rate" style="color:' + color + '">' + rate + '%</div>';
       diagHtml += '<div class="diag-count">' + val.correct + '/' + val.total + '</div></div>';
     });
-    // 没用测验数据的场景，按学习记录生成简单诊断
     if (!hasData && stats.totalLearned > 0) {
       const mastered = stats.totalMastered;
       const rate = stats.totalLearned > 0 ? Math.round(mastered / stats.totalLearned * 100) : 0;
@@ -183,8 +411,6 @@ const App = {
     }
     diagHtml += '</div>';
     document.getElementById('diagnosis-section').innerHTML = diagHtml;
-
-    console.log('诊断已渲染, hasData:', hasData);
 
     // 成就检测
     const newAchi = Store.checkAchievements(stats);
@@ -213,10 +439,222 @@ const App = {
     document.getElementById('achievements-list').innerHTML = earnedHtml;
   },
 
+  /** 数字滚动动画 */
+  animateNumber(elId, target) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const current = parseInt(el.textContent.replace(/[^0-9]/g, '')) || 0;
+    if (current === target) return;
+
+    el.classList.remove('animate');
+    void el.offsetWidth; // 触发回流以重新播放动画
+    el.textContent = target;
+    el.classList.add('animate');
+  },
+
+  /** 待复习 Widget */
+  renderDueWidget() {
+    const learnData = Store.getLearnData();
+    const dueWords = SM2.getDueWords(learnData);
+    const widget = document.getElementById('due-widget');
+    const countEl = document.getElementById('due-count');
+    if (!widget || !countEl) return;
+    if (dueWords.length > 0) {
+      widget.classList.remove('hidden');
+      countEl.textContent = dueWords.length + ' 个单词需要复习';
+    } else {
+      widget.classList.add('hidden');
+    }
+  },
+
+  /** 学习趋势折线图（Canvas） */
+  renderTrendChart() {
+    const canvas = document.getElementById('trend-chart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+
+    // 设置实际尺寸
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = 200 * dpr;
+    ctx.scale(dpr, dpr);
+    const w = rect.width;
+    const h = 200;
+
+    // 获取14天数据
+    const dailyStats = Store.getDailyStats(14);
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+
+    ctx.clearRect(0, 0, w, h);
+
+    const padding = { top: 20, bottom: 30, left: 10, right: 10 };
+    const chartW = w - padding.left - padding.right;
+    const chartH = h - padding.top - padding.bottom;
+
+    const counts = dailyStats.map(d => d.learned + d.reviewed);
+    const maxVal = Math.max(1, ...counts);
+
+    // 网格线
+    ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    for (let i = 0; i <= 4; i++) {
+      const y = padding.top + (chartH / 4) * i;
+      ctx.beginPath();
+      ctx.moveTo(padding.left, y);
+      ctx.lineTo(w - padding.right, y);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+
+    // 绘制折线
+    const points = counts.map((c, i) => ({
+      x: padding.left + (chartW / (counts.length - 1 || 1)) * i,
+      y: padding.top + chartH - (c / maxVal) * chartH
+    }));
+
+    // 渐变填充区域
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, padding.top + chartH);
+    points.forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.lineTo(points[points.length - 1].x, padding.top + chartH);
+    ctx.closePath();
+
+    const gradient = ctx.createLinearGradient(0, padding.top, 0, padding.top + chartH);
+    gradient.addColorStop(0, isDark ? 'rgba(96,165,250,0.3)' : 'rgba(59,130,246,0.15)');
+    gradient.addColorStop(1, isDark ? 'rgba(96,165,250,0.02)' : 'rgba(59,130,246,0.02)');
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    // 折线
+    ctx.beginPath();
+    points.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+    ctx.strokeStyle = isDark ? '#60a5fa' : '#3b82f6';
+    ctx.lineWidth = 2.5;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+
+    // 数据点
+    points.forEach((p, i) => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = isDark ? '#60a5fa' : '#3b82f6';
+      ctx.fill();
+      ctx.strokeStyle = isDark ? '#0f1729' : '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    });
+
+    // X 轴标签
+    ctx.fillStyle = isDark ? '#8896ae' : '#6c7a91';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center';
+    dailyStats.forEach((d, i) => {
+      if (i % 2 === 0 || i === dailyStats.length - 1) {
+        const dateStr = d.date.slice(5); // MM-DD
+        ctx.fillText(dateStr, points[i].x, h - 5);
+      }
+    });
+  },
+
+  /** 掌握分布环形图（Canvas） */
+  renderDistributionChart() {
+    const canvas = document.getElementById('distribution-chart');
+    const legend = document.getElementById('distribution-legend');
+    if (!canvas || !legend) return;
+
+    const learnData = Store.getLearnData();
+    const allWords = this.getWordDB();
+
+    let newCount = 0;
+    let learning = 0;
+    let mastered = 0;
+
+    allWords.forEach(w => {
+      const state = learnData[w.id];
+      if (!state || state.level === 0) newCount++;
+      else if (state.level < 4) learning++;
+      else mastered++;
+    });
+
+    const total = newCount + learning + mastered;
+    if (total === 0) {
+      legend.innerHTML = '<div style="color:var(--text2);font-size:13px">暂无数据</div>';
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
+
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+
+    // 只在首次或resize时设置尺寸
+    if (canvas._initW !== rect.width) {
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      canvas._initW = rect.width;
+    }
+    ctx.scale(dpr, dpr);
+
+    const size = Math.min(rect.width, rect.height);
+    const cx = size / 2;
+    const cy = size / 2;
+    const outerR = size / 2 - 4;
+    const innerR = outerR * 0.6;
+
+    ctx.clearRect(0, 0, rect.width, rect.height);
+
+    const colors = [
+      { label: '新词', color: isDark() ? '#4b5568' : '#d1d5db', count: newCount },
+      { label: '学习中', color: isDark() ? '#fbbf24' : '#ff9500', count: learning },
+      { label: '已掌握', color: isDark() ? '#4ade80' : '#34c759', count: mastered }
+    ].filter(c => c.count > 0);
+
+    // 根据暗色模式调整
+    function isDark() {
+      return document.documentElement.getAttribute('data-theme') === 'dark';
+    }
+
+    let startAngle = -Math.PI / 2;
+    const totalVal = colors.reduce((s, c) => s + c.count, 0);
+
+    colors.forEach(seg => {
+      const sliceAngle = (seg.count / totalVal) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, outerR, startAngle, startAngle + sliceAngle);
+      ctx.arc(cx, cy, innerR, startAngle + sliceAngle, startAngle, true);
+      ctx.closePath();
+      ctx.fillStyle = seg.color;
+      ctx.fill();
+      startAngle += sliceAngle;
+    });
+
+    // 中心文字
+    ctx.fillStyle = isDark() ? '#e8edf5' : '#1e2a3a';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(total, cx, cy - 6);
+    ctx.font = '10px sans-serif';
+    ctx.fillStyle = isDark() ? '#8896ae' : '#6c7a91';
+    ctx.fillText('总计', cx, cy + 10);
+
+    // 图例
+    legend.innerHTML = colors.map(c => `
+      <div class="donut-legend-item">
+        <span class="donut-legend-dot" style="background:${c.color}"></span>
+        <span>${c.label}</span>
+        <span class="donut-legend-count">${c.count}词 (${Math.round(c.count/totalVal*100)}%)</span>
+      </div>
+    `).join('');
+  },
+
   switchSource(source) {
     this.currentSource = source;
     this.currentListName = null;
     this.revealStage = 0;
+    this.spellingMode = false;
     location.hash = '#study';
   },
 
@@ -224,6 +662,7 @@ const App = {
     this.currentSource = 'list';
     this.currentListName = name;
     this.revealStage = 0;
+    this.spellingMode = false;
     location.hash = '#study';
   },
 
@@ -245,7 +684,8 @@ const App = {
     } catch(e) {}
   },
 
-  // ============ 单词学习 ============
+  // ============ 单词学习（v3.0） ============
+
   renderStudy() {
     this.loadStudyState();
     const words = this.getWordDB();
@@ -255,10 +695,19 @@ const App = {
     }
     if (!words.length) {
       document.getElementById('study-content').innerHTML = '<div class="empty-state">🎉 没有单词可选，先去选择词库吧！</div>';
+      this.updateStudyProgress(words.length);
+      this.updateSwipeDots(words.length);
       return;
     }
     const word = words[this.currentWordIndex];
     if (!word) return;
+
+    // 更新进度条
+    this.updateStudyProgress(words.length);
+    this.updateSwipeDots(words.length);
+
+    // 设置滑动
+    this.setupSwipeGestures();
 
     const learnData = Store.getLearnData();
     const isBookmarked = Store.isBookmarked(word.id);
@@ -279,7 +728,7 @@ const App = {
           </div>
 
           <div class="word-header">
-            <div class="word-word">${word.word}</div>
+            <div class="word-word" ontouchstart="">${word.word}</div>
             <div class="pronounce-tag">
               <span class="pronounce-text">${word.phonetic || ''}</span>
               <span class="speaker-btn" onclick="event.stopPropagation();App.speak('${safeWord}')">🔊</span>
@@ -323,9 +772,89 @@ const App = {
           </div>
         </div>
       </div>
-      <div style="text-align:center;margin-top:4px"><span style="font-size:11px;color:var(--text2);cursor:pointer" onclick="App.diagSpeech()">🔊 无声？点此诊断</span></div>`;
+      <div style="text-align:center;margin-top:4px">
+        <span style="font-size:11px;color:var(--text2);cursor:pointer" onclick="App.diagSpeech()">🔊 无声？点此诊断</span>
+        <span style="font-size:11px;color:var(--text2);margin-left:12px;cursor:pointer" onclick="App.toggleShortcutsHelp()">⌨️ 快捷键</span>
+      </div>`;
 
     Store.logDailyActivity(new Date().toISOString().split('T')[0], 'learn');
+  },
+
+  /** 更新学习进度条 */
+  updateStudyProgress(total) {
+    const bar = document.getElementById('study-progress-wrap');
+    const inner = document.getElementById('study-progress-bar');
+    if (!bar || !inner) return;
+    if (total === 0) { bar.classList.add('hidden'); return; }
+    bar.classList.remove('hidden');
+    const pct = ((this.currentWordIndex + 1) / total * 100).toFixed(1);
+    inner.style.width = pct + '%';
+  },
+
+  /** 更新滑动指示器（小圆点） */
+  updateSwipeDots(total) {
+    const container = document.getElementById('swipe-dots');
+    if (!container) return;
+    if (total <= 1) { container.classList.add('hidden'); return; }
+    container.classList.remove('hidden');
+    // 最多显示20个点
+    const maxDots = Math.min(total, 20);
+    const step = Math.max(1, Math.floor(total / maxDots));
+    const currentDot = Math.min(Math.floor(this.currentWordIndex / step), maxDots - 1);
+
+    let html = '';
+    for (let i = 0; i < maxDots; i++) {
+      html += `<span class="swipe-dot ${i === currentDot ? 'active' : ''}"></span>`;
+    }
+    container.innerHTML = html;
+  },
+
+  /** 左右滑动手势 */
+  setupSwipeGestures() {
+    const content = document.getElementById('study-content');
+    if (!content) return;
+
+    const onTouchStart = (e) => {
+      this.swipeStartX = e.touches[0].clientX;
+      this.swipeStartY = e.touches[0].clientY;
+      this.swiping = false;
+    };
+
+    const onTouchMove = (e) => {
+      if (this.swipeStartX === 0) return;
+      const dx = e.touches[0].clientX - this.swipeStartX;
+      const dy = e.touches[0].clientY - this.swipeStartY;
+      // 只有当水平滑动距离大于垂直时才触发
+      if (Math.abs(dx) > 20 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+        this.swiping = true;
+      }
+    };
+
+    const onTouchEnd = (e) => {
+      if (!this.swiping) { this.swipeStartX = 0; this.swipeStartY = 0; return; }
+      const dx = e.changedTouches[0].clientX - this.swipeStartX;
+      const threshold = 60;
+      if (dx > threshold) {
+        this.prevWord();
+      } else if (dx < -threshold) {
+        this.nextWord();
+      }
+      this.swipeStartX = 0;
+      this.swipeStartY = 0;
+      this.swiping = false;
+    };
+
+    content.removeEventListener('touchstart', content._swipeStart);
+    content.removeEventListener('touchmove', content._swipeMove);
+    content.removeEventListener('touchend', content._swipeEnd);
+
+    content._swipeStart = onTouchStart;
+    content._swipeMove = onTouchMove;
+    content._swipeEnd = onTouchEnd;
+
+    content.addEventListener('touchstart', onTouchStart, { passive: true });
+    content.addEventListener('touchmove', onTouchMove, { passive: true });
+    content.addEventListener('touchend', onTouchEnd, { passive: true });
   },
 
   studyReveal() {
@@ -337,15 +866,12 @@ const App = {
     const words = this.getWordDB();
     if (this.currentWordIndex < words.length - 1) {
       this.currentWordIndex++;
-      this.revealStage = 0;
-      this.saveStudyState();
-      this.renderStudy();
     } else {
       this.currentWordIndex = 0;
-      this.revealStage = 0;
-      this.saveStudyState();
-      this.renderStudy();
     }
+    this.revealStage = 0;
+    this.saveStudyState();
+    this.renderStudy();
   },
 
   prevWord() {
@@ -358,6 +884,7 @@ const App = {
   },
 
   // ============ 加入单词本弹窗 ============
+
   showAddToList(wordId) {
     const lists = Store.getWordLists();
     const listNames = Object.keys(lists);
@@ -368,7 +895,7 @@ const App = {
       html += `<label class="list-option"><input type="checkbox" ${checked} onchange="App.toggleListWord('${name.replace(/'/g, "\\'")}', ${wordId}, this.checked)"> ${name} (${lists[name].length})</label>`;
     });
     html += `<div style="margin-top:12px;display:flex;gap:8px">
-      <input id="new-list-input" placeholder="新建单词本..." style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px">
+      <input id="new-list-input" placeholder="新建单词本..." style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);color:var(--text)">
       <button class="btn" style="flex:none;padding:8px 16px;background:var(--primary);color:white" onclick="App.createListAndAdd(document.getElementById('new-list-input').value, ${wordId})">新建</button>
     </div>
     <button class="btn btn-outline" style="margin-top:10px" onclick="this.closest('.modal-overlay').remove()">关闭</button>
@@ -389,6 +916,7 @@ const App = {
   },
 
   // ============ 闪卡测验 ============
+
   showQuizModePicker() {
     document.getElementById('quiz-content').innerHTML = `
       <div class="quiz-mode-picker">
@@ -402,6 +930,11 @@ const App = {
           <div style="font-size:32px">🎧</div>
           <div class="mode-name">听音辨义</div>
           <div class="mode-desc">听单词发音，选择正确释义（专练听力）</div>
+        </div>
+        <div class="mode-card" onclick="App.startSpellingQuiz()">
+          <div style="font-size:32px">✍️</div>
+          <div class="mode-name">拼写模式</div>
+          <div class="mode-desc">看中文释义，输入英文单词（练拼写）</div>
         </div>
       </div>`;
   },
@@ -424,6 +957,19 @@ const App = {
     this.renderQuiz();
   },
 
+  // ============ ✍️ 拼写模式（v3.0） ============
+
+  startSpellingQuiz() {
+    this.quizMode = 'spelling';
+    const words = this.getWordDB().length > 0 ? this.getWordDB() : [...WordDB];
+    this.quizWords = words.sort(() => Math.random() - 0.5).slice(0, Math.min(15, words.length));
+    this.quizIndex = 0;
+    this.spellingMode = true;
+    this.spellingCorrect = false;
+    location.hash = '#quiz'; // 确保 quiz 页面被激活
+    this.renderQuiz();
+  },
+
   renderQuiz() {
     if (this.quizIndex >= this.quizWords.length) {
       document.getElementById('quiz-content').innerHTML = `
@@ -434,14 +980,178 @@ const App = {
           <button class="btn btn-primary" onclick="App.showQuizModePicker()">选择模式</button>
           <button class="btn btn-outline" onclick="location.hash='#dashboard'">返回</button>
         </div>`;
+      this.spellingMode = false;
       return;
     }
     const word = this.quizWords[this.quizIndex];
     if (!word) return;
     this.showAnswer = false;
+    this.spellingCorrect = false;
+
     if (this.quizMode === 'listening') this.renderListeningQuiz(word);
+    else if (this.quizMode === 'spelling') this.renderSpellingQuiz(word);
     else this.renderNormalQuiz(word);
   },
+
+  /** ✍️ 渲染拼写测验 */
+  renderSpellingQuiz(word) {
+    const wordLen = word.word.replace(/[^a-zA-Z]/g, '').length;
+    const hints = Array(wordLen).fill('_').join(' ');
+
+    document.getElementById('quiz-content').innerHTML = `
+      <div class="quiz-progress">
+        <span>第 ${this.quizIndex + 1} / ${this.quizWords.length} 题 · ✍️ 拼写模式</span>
+        <span class="badge">${wordLen} 字母</span>
+      </div>
+      <div class="card quiz-card">
+        <div class="quiz-prompt" style="padding:24px 16px">
+          <div style="font-size:14px;color:var(--text2);margin-bottom:8px">请拼写以下单词：</div>
+          <h2 style="font-size:22px;font-weight:600">${word.def}</h2>
+          <div style="font-size:13px;color:var(--text2);margin-top:4px">（${word.pos || ''}）</div>
+          <div class="spelling-hint" id="spelling-hint">${hints}</div>
+        </div>
+        <div class="spelling-input-wrap" id="spelling-input-wrap">
+          <input
+            type="text"
+            id="spelling-input"
+            class="spelling-input"
+            placeholder="输入英文单词..."
+            autocomplete="off"
+            autocorrect="off"
+            autocapitalize="off"
+            spellcheck="false"
+            oninput="App.checkSpelling(this.value)"
+          />
+          <div id="spelling-feedback" class="spelling-feedback"></div>
+          <div id="spelling-reveal" class="spelling-reveal hidden" style="margin-top:12px">
+            <div class="word-word" style="font-size:32px;color:var(--primary)">${word.word}</div>
+            <div class="pronounce-tag" style="display:inline-flex;margin-top:6px;justify-content:center">
+              <span class="pronounce-text">${word.phonetic || ''}</span>
+              <span class="speaker-btn" onclick="event.stopPropagation();App.speak('${word.word.replace(/'/g, "\\'")}')">🔊</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="quiz-buttons">
+        <button class="btn btn-outline" onclick="App.skipSpelling()">⏭ 跳过</button>
+        <button class="btn btn-outline" onclick="App.revealSpelling()">👁 显示答案</button>
+        <button class="btn btn-primary" onclick="App.nextSpelling()" id="spelling-next" style="display:none">下一题 →</button>
+      </div>`;
+
+    setTimeout(() => document.getElementById('spelling-input')?.focus(), 300);
+  },
+
+  /** ✍️ 逐字母检查拼写 */
+  checkSpelling(value) {
+    const word = this.quizWords[this.quizIndex];
+    if (!word || this.spellingCorrect) return;
+
+    const input = value.trim().toLowerCase();
+    const target = word.word.toLowerCase();
+    const inputEl = document.getElementById('spelling-input');
+    const feedback = document.getElementById('spelling-feedback');
+    const hint = document.getElementById('spelling-hint');
+
+    if (!input) {
+      // 显示全部下划线
+      const len = target.replace(/[^a-z]/g, '').length;
+      hint.textContent = Array(len).fill('_').join(' ');
+      inputEl.className = 'spelling-input';
+      feedback.textContent = '';
+      return;
+    }
+
+    // 逐字母检查，生成提示
+    let hintChars = [];
+    let allCorrect = true;
+    for (let i = 0; i < target.length; i++) {
+      if (i < input.length) {
+        if (input[i] === target[i]) {
+          hintChars.push(target[i]);
+        } else {
+          hintChars.push(target[i].toUpperCase());
+          allCorrect = false;
+        }
+      } else {
+        hintChars.push('_');
+        allCorrect = false;
+      }
+    }
+    hint.textContent = hintChars.join(' ');
+
+    // 完整输入时做判断
+    if (input.length >= target.length) {
+      if (input === target) {
+        // 拼写正确
+        this.spellingCorrect = true;
+        inputEl.className = 'spelling-input correct';
+        feedback.textContent = '✅ 拼写正确！';
+        feedback.className = 'spelling-feedback correct';
+        this.onSpellingCorrect(word);
+        document.getElementById('spelling-reveal')?.classList.remove('hidden');
+        document.getElementById('spelling-next')?.style.display = 'block';
+        inputEl.disabled = true;
+      } else if (input.length >= target.length + 1) {
+        // 拼写错误
+        inputEl.className = 'spelling-input wrong';
+        feedback.textContent = '❌ 不对哦，再试试～';
+        feedback.className = 'spelling-feedback wrong';
+      }
+    }
+  },
+
+  /** 拼写正确后的处理 */
+  onSpellingCorrect(word) {
+    const learnData = Store.getLearnData();
+    Store.saveWordState(word.id, SM2.calculate(learnData[word.id], 5));
+    const today = new Date().toISOString().split('T')[0];
+    Store.logDailyActivity(today, 'review');
+    Store.logDailyActivity(today, 'correct');
+    Store.logDailyActivity(today, 'total');
+    Store.logQuiz(word.id, true, 'spelling');
+  },
+
+  /** ✍️ 跳过拼写 */
+  skipSpelling() {
+    const word = this.quizWords[this.quizIndex];
+    if (word) {
+      const learnData = Store.getLearnData();
+      Store.saveWordState(word.id, SM2.calculate(learnData[word.id], 1));
+      const today = new Date().toISOString().split('T')[0];
+      Store.logDailyActivity(today, 'review');
+      Store.logDailyActivity(today, 'total');
+      Store.logQuiz(word.id, false, 'spelling');
+    }
+    this.nextSpelling();
+  },
+
+  /** ✍️ 显示答案 */
+  revealSpelling() {
+    const word = this.quizWords[this.quizIndex];
+    if (!word) return;
+    const reveal = document.getElementById('spelling-reveal');
+    const input = document.getElementById('spelling-input');
+    const nextBtn = document.getElementById('spelling-next');
+    if (reveal) reveal.classList.remove('hidden');
+    if (input) input.disabled = true;
+    if (nextBtn) nextBtn.style.display = 'block';
+
+    // 拼写检查算一次模糊
+    const learnData = Store.getLearnData();
+    Store.saveWordState(word.id, SM2.calculate(learnData[word.id], 2));
+    const today = new Date().toISOString().split('T')[0];
+    Store.logDailyActivity(today, 'review');
+    Store.logDailyActivity(today, 'total');
+    Store.logQuiz(word.id, false, 'spelling');
+  },
+
+  /** ✍️ 下一题 */
+  nextSpelling() {
+    this.quizIndex++;
+    this.renderQuiz();
+  },
+
+  // ============ 普通测验渲染 ============
 
   renderNormalQuiz(word) {
     const prompt = this.currentStudyMode === 'en2cn' ? word.word : word.def;
@@ -546,7 +1256,8 @@ const App = {
     setTimeout(() => { this.quizIndex++; this.renderQuiz(); }, 800);
   },
 
-  // ============ 词库浏览 ============
+  // ============ 词库浏览（搜索防抖） ============
+
   renderWordList(query = '') {
     const sources = Store.getWordSources();
     const lists = Store.getWordLists();
@@ -573,7 +1284,7 @@ const App = {
     });
 
     let html = `<div class="word-source-tabs">${tabsHtml}</div>
-      <div class="word-search"><input type="text" placeholder="搜索单词或释义..." value="${query}" oninput="App.renderWordList(this.value)" /></div>
+      <div class="word-search"><input type="text" placeholder="搜索单词或释义..." value="${query}" oninput="App.debouncedSearch(this.value)" /></div>
       <div class="word-list">`;
     words.forEach(w => {
       if (!w) return;
@@ -594,6 +1305,14 @@ const App = {
     document.getElementById('word-list-content').innerHTML = html;
   },
 
+  /** 防抖搜索 */
+  debouncedSearch(value) {
+    clearTimeout(this._searchTimer);
+    this._searchTimer = setTimeout(() => {
+      this.renderWordList(value);
+    }, 200);
+  },
+
   switchWordSource(source, listName) {
     if (source === 'list' && listName) { this.currentListName = listName; this.currentSource = 'list'; }
     else { this.currentSource = source; this.currentListName = null; }
@@ -601,12 +1320,13 @@ const App = {
   },
 
   // ============ 单词本管理 ============
+
   renderLists() {
     const lists = Store.getWordLists();
     const learnData = Store.getLearnData();
     let html = '<div class="page-title">📁 我的单词本</div>';
     html += `<div style="display:flex;gap:8px;margin-bottom:16px">
-      <input id="list-input" placeholder="输入单词本名称..." style="flex:1;padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:14px">
+      <input id="list-input" placeholder="输入单词本名称..." style="flex:1;padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);color:var(--text)">
       <button class="btn btn-primary" style="flex:none;padding:10px 20px" onclick="App.createList(document.getElementById('list-input').value)">创建</button>
       <button class="btn btn-outline" style="flex:none;padding:10px 20px" onclick="location.hash='#import'">📥 导入</button>
     </div>`;
@@ -629,8 +1349,8 @@ const App = {
   createList(name) { if (!name.trim()) return; if (Store.createWordList(name.trim())) this.renderLists(); },
   deleteList(name) { if (confirm(`确定删除「${name}」？`)) { Store.deleteWordList(name); this.renderLists(); } },
 
-
   // ============ 导入单词 ============
+
   renderImport() {
     const lists = Store.getWordLists();
     const listNames = Object.keys(lists);
@@ -644,10 +1364,10 @@ const App = {
     html += '<input id="file-input" type="file" accept=".txt,.csv" style="display:none" onchange="App.handleFileSelect(event)" />';
     html += '</div>';
     html += '<div style="font-size:13px;color:var(--text2);margin:4px 0 8px;text-align:center">— 或直接粘贴文本 —</div>';
-    html += '<textarea id="import-text" placeholder="每行一个单词\nabandon\nability\naccess" style="width:100%;min-height:100px;padding:10px;border:1px solid var(--border);border-radius:10px;font-size:14px;font-family:inherit;resize:vertical"></textarea>';
+    html += '<textarea id="import-text" placeholder="每行一个单词\nabandon\nability\naccess" style="width:100%;min-height:100px;padding:10px;border:1px solid var(--border);border-radius:10px;font-size:14px;font-family:inherit;resize:vertical;background:var(--surface);color:var(--text)"></textarea>';
     html += '<div style="margin:10px 0;display:flex;gap:8px;align-items:center">';
     html += '<label style="font-size:14px;font-weight:500">导入到：</label>';
-    html += '<select id="import-list" style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px">';
+    html += '<select id="import-list" style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--surface);color:var(--text)">';
     listNames.forEach(n => html += '<option value="' + n.replace(/"/g,'&quot;') + '">' + n + '</option>');
     html += '</select></div>';
     html += '<button class="btn btn-primary" onclick="App.doImport()">📥 开始导入</button>';
@@ -685,13 +1405,11 @@ const App = {
     const ta = document.getElementById('import-text');
     if (!ta) return;
     const text = ta.value.trim();
-    if (!text) { document.getElementById('import-result').textContent = '\u26a0\ufe0f 请先输入或选择文件'; return; }
+    if (!text) { document.getElementById('import-result').textContent = '⚠️ 请先输入或选择文件'; return; }
     const listName = document.getElementById('import-list')?.value || '默认收藏';
-    // 只按换行分割，每行一个单词
     const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
     let found = 0, added = 0;
     lines.forEach(line => {
-      // 取每行第一个英文单词，忽略中文/音标/例句
       const match = line.match(/[a-zA-Z-]+/);
       if (!match) return;
       const w = match[0].toLowerCase();
@@ -700,9 +1418,12 @@ const App = {
       Store.addImportedWord(w, '', '', '', listName);
       added++;
     });
-    const r = '\u2705 完成！找到 ' + found + ' 个已有词 + 新增 ' + added + ' 个自定义词 \u2192 已加入\u300c' + listName + '\u300d';
+    const r = '✅ 完成！找到 ' + found + ' 个已有词 + 新增 ' + added + ' 个自定义词 → 已加入「' + listName + '」';
     document.getElementById('import-result').innerHTML = r + '<br><button class="btn btn-outline" style="margin-top:8px;padding:6px 14px;font-size:13px" onclick="location.hash=\'#lists\'">去单词本查看</button>';
-  },  // ============ 通用 ============
+  },
+
+  // ============ 通用 ============
+
   speak(text) {
     if (!text || !window.speechSynthesis) return;
     try {
@@ -740,19 +1461,6 @@ const App = {
         this.speak('Hello, test one two three.');
       } else { alert(msg); }
     } else { alert(msg); }
-  },
-
-  diagBeep() {
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.frequency.value = 523;
-      gain.gain.value = 0.3;
-      osc.start(); osc.stop(ctx.currentTime + 0.3);
-      alert('✅ 喇叭测试成功！');
-    } catch(e) { alert('❌ 测试失败: ' + e.message); }
   },
 
   toggleBookmark(wordId) {

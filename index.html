@@ -3,30 +3,92 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>四级单词 · CET-4 高频词库</title>
+  <meta name="theme-color" id="meta-theme-color" content="#f2f4f8">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.svg">
+  <title>四级单词 · CET-4 高频词库 v3.0</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
+  <!-- ===== 暗色模式浮动切换按钮 ===== -->
+  <button id="theme-toggle" class="theme-toggle" onclick="App.toggleTheme()" title="切换暗色模式">🌙</button>
+
+  <!-- ===== 键盘快捷键帮助弹窗 ===== -->
+  <div id="shortcuts-help" class="shortcuts-overlay hidden" onclick="App.closeShortcutsHelp()">
+    <div class="shortcuts-modal" onclick="event.stopPropagation()">
+      <div class="shortcuts-header">
+        <span class="shortcuts-title">⌨️ 键盘快捷键</span>
+        <span class="shortcuts-close" onclick="App.closeShortcutsHelp()">✕</span>
+      </div>
+      <div class="shortcuts-body">
+        <div class="shortcut-row"><kbd>←</kbd><span>上一个单词</span></div>
+        <div class="shortcut-row"><kbd>→</kbd><span>下一个单词</span></div>
+        <div class="shortcut-row"><kbd>Space</kbd><span>逐级揭示</span></div>
+        <div class="shortcut-row"><kbd>↑</kbd><span>朗读单词</span></div>
+        <div class="shortcut-row"><kbd>↓</kbd><span>朗读例句</span></div>
+        <div class="shortcut-row"><kbd>?</kbd> / <kbd>H</kbd><span>打开帮助</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 长按快捷菜单 ===== -->
+  <div id="longpress-menu" class="longpress-overlay hidden" onclick="App.closeLongpressMenu()">
+    <div class="longpress-menu" onclick="event.stopPropagation()">
+      <div class="longpress-title">⚡ 快捷操作</div>
+      <div class="longpress-item" onclick="App.longpressAction('bookmark')">⭐ 收藏 / 取消收藏</div>
+      <div class="longpress-item" onclick="App.longpressAction('copy')">📋 复制单词</div>
+      <div class="longpress-item" onclick="App.longpressAction('speak')">🔊 朗读</div>
+      <div class="longpress-item" onclick="App.longpressAction('addToList')">📁 加入单词本</div>
+    </div>
+  </div>
+
   <!-- ===== 页面：学习面板 ===== -->
-  <div id="page-dashboard" class="page">
+  <div id="page-dashboard" class="page page-fade">
     <h1 class="page-title">📊 学习面板</h1>
     <div class="stats-grid">
       <div class="stat-card">
-        <div class="stat-number" id="stat-learned">0</div>
+        <div class="stat-number" id="stat-learned" data-target="0">0</div>
         <div class="stat-label">已学单词</div>
       </div>
       <div class="stat-card">
-        <div class="stat-number" id="stat-mastered">0</div>
+        <div class="stat-number" id="stat-mastered" data-target="0">0</div>
         <div class="stat-label">已掌握</div>
       </div>
       <div class="stat-card">
-        <div class="stat-number" id="stat-streak">0 天</div>
+        <div class="stat-number" id="stat-streak" data-target="0">0 天</div>
         <div class="stat-label">连续打卡</div>
       </div>
       <div class="stat-card">
-        <div class="stat-number" id="stat-today">0</div>
+        <div class="stat-number" id="stat-today" data-target="0">0</div>
         <div class="stat-label">今日学习</div>
+      </div>
+    </div>
+    <!-- 待复习 Widget -->
+    <div id="due-widget" class="card due-widget hidden">
+      <div class="card-content" style="display:flex;align-items:center;gap:12px;padding:16px 20px">
+        <span style="font-size:28px">📝</span>
+        <div style="flex:1">
+          <div style="font-size:16px;font-weight:600">待复习</div>
+          <div id="due-count" style="font-size:13px;color:var(--text2)">0 个单词需要复习</div>
+        </div>
+        <button class="btn btn-primary" style="flex:none;padding:8px 16px;font-size:13px" onclick="location.hash='#study'">去复习</button>
+      </div>
+    </div>
+    <!-- 学习趋势图表 -->
+    <div class="card">
+      <div class="card-content">
+        <div class="section-label" style="margin-bottom:12px">📈 学习趋势（近14天）</div>
+        <canvas id="trend-chart" class="trend-chart"></canvas>
+      </div>
+    </div>
+    <!-- 掌握分布 -->
+    <div class="card">
+      <div class="card-content" style="display:flex;align-items:center;gap:16px">
+        <canvas id="distribution-chart" class="donut-chart"></canvas>
+        <div id="distribution-legend" class="donut-legend"></div>
       </div>
     </div>
     <div id="source-selector"></div>
@@ -42,15 +104,21 @@
   </div>
 
   <!-- ===== 页面：单词学习 ===== -->
-  <div id="page-study" class="page hidden">
+  <div id="page-study" class="page page-fade hidden">
     <h1 class="page-title">📖 单词学习</h1>
+    <!-- 学习进度条 -->
+    <div id="study-progress-wrap" class="study-progress-wrap hidden">
+      <div id="study-progress-bar" class="study-progress-bar-animated"></div>
+    </div>
+    <!-- 滑动指示器 -->
+    <div id="swipe-dots" class="swipe-dots hidden"></div>
     <div id="study-content">
       <div class="empty-state">加载中...</div>
     </div>
   </div>
 
   <!-- ===== 页面：闪卡测验 ===== -->
-  <div id="page-quiz" class="page hidden">
+  <div id="page-quiz" class="page page-fade hidden">
     <h1 class="page-title">🎯 闪卡测验</h1>
     <div id="quiz-content">
       <div class="empty-state">加载中...</div>
@@ -58,7 +126,7 @@
   </div>
 
   <!-- ===== 页面：词库 ===== -->
-  <div id="page-words" class="page hidden">
+  <div id="page-words" class="page page-fade hidden">
     <h1 class="page-title">📚 词库</h1>
     <div id="word-list-content">
       <div class="empty-state">加载中...</div>
@@ -66,12 +134,12 @@
   </div>
 
   <!-- ===== 页面：单词本管理 ===== -->
-  <div id="page-lists" class="page hidden">
+  <div id="page-lists" class="page page-fade hidden">
     <div id="lists-content"></div>
   </div>
 
   <!-- ===== 页面：导入单词 ===== -->
-  <div id="page-import" class="page hidden">
+  <div id="page-import" class="page page-fade hidden">
     <h1 class="page-title">📥 导入单词</h1>
     <div id="import-content"></div>
   </div>
@@ -81,22 +149,27 @@
     <button class="nav-item active" data-page="dashboard" onclick="location.hash='#dashboard'">
       <span class="nav-icon">📊</span>
       <span>面板</span>
+      <span class="nav-indicator"></span>
     </button>
     <button class="nav-item" data-page="study" onclick="location.hash='#study'">
       <span class="nav-icon">📖</span>
       <span>学习</span>
+      <span class="nav-indicator"></span>
     </button>
     <button class="nav-item" data-page="quiz" onclick="location.hash='#quiz'">
       <span class="nav-icon">🎯</span>
       <span>测验</span>
+      <span class="nav-indicator"></span>
     </button>
     <button class="nav-item" data-page="words" onclick="location.hash='#words'">
       <span class="nav-icon">📚</span>
       <span>词库</span>
+      <span class="nav-indicator"></span>
     </button>
     <button class="nav-item" data-page="lists" onclick="location.hash='#lists'">
       <span class="nav-icon">📁</span>
       <span>单词本</span>
+      <span class="nav-indicator"></span>
     </button>
   </nav>
 
@@ -106,5 +179,27 @@
   <script src="js/sm2.js"></script>
   <script src="js/calendar.js"></script>
   <script src="js/app.js"></script>
+  <script>
+    // 注册 Service Worker
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').then(reg => {
+          console.log('SW 注册成功:', reg.scope);
+        }).catch(err => {
+          console.warn('SW 注册失败:', err);
+        });
+      });
+    }
+
+    // 检测暗色模式偏好
+    (function() {
+      const saved = localStorage.getItem('cet4_theme');
+      if (saved) {
+        document.documentElement.setAttribute('data-theme', saved);
+      } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
 </body>
 </html>
