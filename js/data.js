@@ -1,7 +1,6 @@
 /**
- * data.js — 四级真题高频词库
- * 来源：历年四级真题分析，按考频排序
- * 首批 100 词，结构支持扩展到 1500+
+ * data.js — CET-4 Vocab 四级真题高频词库
+ * 来源：历年四级真题分析 + 桌面词汇表导入
  */
 const WordDB = [
   { id: 1, word: 'abandon', pos: 'v.', phonetic: '/əˈbændən/', def: '放弃，遗弃', example: 'They had to abandon the plan due to lack of funding.', example_cn: '由于缺乏资金，他们不得不放弃这个计划。', collocation: 'abandon hope 放弃希望 / abandon the plan 放弃计划', year: '2022', type: '阅读' },
@@ -104,10 +103,6 @@ const WordDB = [
   { id: 98, word: 'decade', pos: 'n.', phonetic: '/ˈdekeɪd/', def: '十年', example: 'The past decade has seen rapid technological advances.', example_cn: '过去的十年见证了科技的飞速进步。', collocation: 'over the past decade 在过去十年 / in the last decade 最近十年 / for decades 几十年来', year: '2023', type: '阅读' },
   { id: 99, word: 'decline', pos: 'v./n.', phonetic: '/dɪˈklaɪn/', def: '下降，减少；拒绝', example: 'The number of applicants has declined this year.', example_cn: '今年的申请人数有所下降。', collocation: 'decline in 在...方面下降 / on the decline 在下降 / decline an offer 拒绝提议 / population decline 人口下降', year: '2022', type: '阅读' },
   { id: 100, word: 'define', pos: 'v.', phonetic: '/dɪˈfaɪn/', def: '定义，界定', example: 'How would you define success in your life?', example_cn: '你如何定义你人生中的成功？', collocation: 'define as 定义为 / define the term 定义术语 / clearly define 明确定义 / define the boundaries 界定边界', year: '2023', type: '阅读' },
-];
-
-// ===== 听力场景词（V2） =====
-const ListeningWords = [
   { id: 201, word: 'dormitory', pos: 'n.', phonetic: '/ˈdɔːrmətɔːri/', def: '宿舍', example: 'I share a dormitory with three other students.', example_cn: '我和另外三个学生合住一个宿舍。', collocation: 'dormitory building 宿舍楼 / live in a dormitory 住宿舍', year: '2022', type: '听力·校园', tag: 'campus' },
   { id: 202, word: 'scholarship', pos: 'n.', phonetic: '/ˈskɑːlərʃɪp/', def: '奖学金', example: 'She won a scholarship to study abroad.', example_cn: '她获得了出国留学的奖学金。', collocation: 'win a scholarship 获得奖学金 / apply for a scholarship 申请奖学金 / full scholarship 全额奖学金', year: '2023', type: '听力·校园', tag: 'campus' },
   { id: 203, word: 'lecture', pos: 'n.', phonetic: '/ˈlektʃər/', def: '讲座，讲课', example: 'Professor Smith gave a lecture on climate change.', example_cn: '史密斯教授做了一个关于气候变化的讲座。', collocation: 'attend a lecture 参加讲座 / give a lecture 做讲座 / lecture hall 报告厅', year: '2022', type: '听力·校园', tag: 'campus' },
@@ -138,10 +133,6 @@ const ListeningWords = [
   { id: 228, word: 'maintenance', pos: 'n.', phonetic: '/ˈmeɪntənəns/', def: '维护，保养', example: 'The building needs regular maintenance.', example_cn: '这栋建筑需要定期维护。', collocation: 'regular maintenance 定期维护 / maintenance cost 维护费用 / building maintenance 建筑维护', year: '2023', type: '听力·日常', tag: 'daily' },
   { id: 229, word: 'curriculum', pos: 'n.', phonetic: '/kəˈrɪkjələm/', def: '课程（总称）', example: 'The curriculum includes both required and elective courses.', example_cn: '课程包括必修课和选修课。', collocation: 'school curriculum 学校课程 / curriculum design 课程设计 / core curriculum 核心课程', year: '2022', type: '听力·校园', tag: 'campus' },
   { id: 230, word: 'elective', pos: 'adj./n.', phonetic: '/ɪˈlektɪv/', def: '选修的；选修课', example: 'I chose an elective course in psychology.', example_cn: '我选了一门心理学的选修课。', collocation: 'elective course 选修课 / take an elective 选修一门课 / elective subject 选修科目', year: '2023', type: '听力·校园', tag: 'campus' },
-];
-
-// ===== 熟词生义词包（V2） =====
-const TrickyWords = [
   { id: 301, word: 'address', pos: 'v.', phonetic: '/əˈdres/', def: '解决，处理；演说', note: '常见义：地址（n.）', example: 'The government must address the problem of pollution.', example_cn: '政府必须解决污染问题。', collocation: 'address a problem 解决问题 / address the issue 处理问题 / address a speech 发表演说', year: '2023', type: '熟词生义' },
   { id: 302, word: 'raise', pos: 'v.', phonetic: '/reɪz/', def: '抚养，筹集；提出', note: '常见义：举起（v.）', example: 'They raised enough money to build a new school.', example_cn: '他们筹集了足够的钱来建一所新学校。', collocation: 'raise a child 抚养孩子 / raise money 筹集资金 / raise a question 提出问题', year: '2022', type: '熟词生义' },
   { id: 303, word: 'develop', pos: 'v.', phonetic: '/dɪˈveləp/', def: '培养，研制；开发', note: '常见义：发展（v.）', example: 'The course helps students develop critical thinking skills.', example_cn: '这门课帮助学生培养批判性思维能力。', collocation: 'develop a habit 养成习惯 / develop a product 开发产品 / develop skills 培养技能', year: '2023', type: '熟词生义' },
@@ -162,9 +153,6 @@ const TrickyWords = [
   { id: 318, word: 'grade', pos: 'v.', phonetic: '/ɡreɪd/', def: '评分；分级', note: '常见义：年级；成绩（n.）', example: 'Teachers spend hours grading students\' papers.', example_cn: '老师花数小时批改学生的试卷。', collocation: 'grade the papers 批改试卷 / grade students 给学生评分 / grade A 甲级', year: '2023', type: '熟词生义' },
   { id: 319, word: 'weather', pos: 'v.', phonetic: '/ˈweðər/', def: '平安度过（困难）', note: '常见义：天气（n.）', example: 'The company weathered the financial crisis.', example_cn: '这家公司平安度过了金融危机。', collocation: 'weather the storm 渡过难关 / weather the crisis 度过危机', year: '2022', type: '熟词生义' },
   { id: 320, word: 'doctor', pos: 'v.', phonetic: '/ˈdɑːktər/', def: '篡改，伪造', note: '常见义：医生（n.）', example: 'They doctored the official report.', example_cn: '他们篡改了官方报告。', collocation: 'doctor the evidence 篡改证据 / doctor the numbers 篡改数字', year: '2023', type: '熟词生义' },
-
-
-// ===== 形容词高频词（从桌面词汇表导入） =====
   { id: 321, word: 'acute', pos: 'adj.', phonetic: '/əˈkjuːt/', def: '剧烈的；敏锐的', example: '', example_cn: '', collocation: 'acute pain / acute observation', year: '2026', type: '阅读' },
   { id: 322, word: 'alternative', pos: 'adj.', phonetic: '/ɔːlˈtɜːnətɪv/', def: '替代的；另类的', example: '', example_cn: '', collocation: 'alternative energy / alternative solution', year: '2026', type: '阅读' },
   { id: 323, word: 'applicable', pos: 'adj.', phonetic: '/əˈplɪkəbl/', def: '可应用的；适当的', example: '', example_cn: '', collocation: 'applicable to / applicable law', year: '2026', type: '阅读' },
@@ -241,9 +229,6 @@ const TrickyWords = [
   { id: 394, word: 'versatile', pos: 'adj.', phonetic: '/ˈvɜːsətaɪl/', def: '多才多艺的；多功能的', example: '', example_cn: '', collocation: 'versatile tool / versatile player', year: '2026', type: '阅读' },
   { id: 395, word: 'viable', pos: 'adj.', phonetic: '/ˈvaɪəbl/', def: '可行的；能独立生存的', example: '', example_cn: '', collocation: 'viable alternative / viable business', year: '2026', type: '阅读' },
   { id: 396, word: 'vigorous', pos: 'adj.', phonetic: '/ˈvɪɡərəs/', def: '有力的；精力旺盛的', example: '', example_cn: '', collocation: 'vigorous exercise / vigorous debate', year: '2026', type: '阅读' },
-
-
-// ===== 四���词汇扩展（从桌面 OneDrive 词汇表导入） =====
   { id: 397, word: 'accordingly', pos: 'adv.', phonetic: '/əˈkɔːrdɪŋli/', def: '因此；相应地', example: '', example_cn: '', collocation: 'act accordingly', year: '2026', type: '阅读' },
   { id: 398, word: 'apparently', pos: 'adv.', phonetic: '/əˈpærəntli/', def: '显然地；表面上地', example: '', example_cn: '', collocation: 'apparently, ...', year: '2026', type: '阅读' },
   { id: 399, word: 'approximately', pos: 'adv.', phonetic: '/əˈprɑːksɪmətli/', def: '大约；近似地', example: '', example_cn: '', collocation: 'approximately...percent', year: '2026', type: '阅读' },
@@ -1040,3 +1025,5 @@ const TrickyWords = [
   { id: 1190, word: 'unlike', pos: 'adj.', phonetic: '/ˌʌnˈlaɪk/', def: '不同的；不像', example: '', example_cn: '', collocation: 'unlike anything else', year: '2026', type: '阅读' },
   { id: 1191, word: 'worthwhile', pos: 'adj.', phonetic: '/ˌwɜːθˈwaɪl/', def: '值得的；有价值的', example: '', example_cn: '', collocation: 'worthwhile cause / worthwhile effort', year: '2026', type: '阅读' },
 ];
+const ListeningWords = [];
+const TrickyWords = [];

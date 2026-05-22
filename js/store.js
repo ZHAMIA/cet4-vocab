@@ -159,31 +159,39 @@ const Store = {
     return [...ids];
   },
 
-  // 获取所有词源类型
+  // 获取所有词源类型（所有词统一在 WordDB 中，按 id 范围分源）
   getWordSources() {
+    const all = [...WordDB, ...this.getImportedWords()];
+    const core = all.filter(w => w.id <= 200);
+    const reading = all.filter(w => w.id > 200 && w.id <= 600);
+    const advanced = all.filter(w => w.id > 600 && w.id < 10000);
     return [
-      { id: 'core', name: '核心高频词', icon: '📖', count: WordDB.length },
-      { id: 'listening', name: '听力场景词', icon: '🎧', count: ListeningWords.length },
-      { id: 'tricky', name: '熟词生义', icon: '🎯', count: TrickyWords.length },
+      { id: 'core', name: '核心高频词', icon: '📖', count: core.length },
+      { id: 'listening', name: '阅读进阶词', icon: '📗', count: reading.length },
+      { id: 'tricky', name: '高级词汇', icon: '📘', count: advanced.length + this.getImportedWords().filter(w => w.id >= 10000).length },
     ];
   },
 
   // 根据词源获取词列表
   getWordsBySource(source) {
+    const all = [...WordDB, ...this.getImportedWords()];
     switch (source) {
-      case 'core': return [...WordDB];
-      case 'listening': return [...ListeningWords];
-      case 'tricky': return [...TrickyWords];
+      case 'core': return all.filter(w => w.id <= 200);
+      case 'listening': return all.filter(w => w.id > 200 && w.id <= 600);
+      case 'tricky': return all.filter(w => w.id > 600 || w.id < 1);
       default: return [];
     }
   },
 
   getAllWords() {
-    return [...WordDB, ...ListeningWords, ...TrickyWords];
+    return [...WordDB, ...this.getImportedWords()];
   },
 
   findWord(id) {
-    return this.getAllWords().find(w => w.id === id);
+    const n = Number(id);
+    const w = WordDB.find(w => w.id === n);
+    if (w) return w;
+    return this.getImportedWords().find(w => w.id === n);
   },
 
   // ===== 导入的自定义词 =====
@@ -319,17 +327,13 @@ const Store = {
   },
 
   getAllWords() {
-    return [...WordDB, ...ListeningWords, ...TrickyWords, ...this.getImportedWords()];
+    return [...WordDB, ...this.getImportedWords()];
   },
 
   findWord(id) {
     const n = Number(id);
     const w = WordDB.find(w => w.id === n);
     if (w) return w;
-    const l = ListeningWords.find(w => w.id === n);
-    if (l) return l;
-    const t = TrickyWords.find(w => w.id === n);
-    if (t) return t;
     return this.getImportedWords().find(w => w.id === n);
   },
 
